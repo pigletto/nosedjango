@@ -164,6 +164,9 @@ class NoseDjango(Plugin):
             # Do not use transactions if user has forbidden usage.
             # Assume that the database supports them anyway.
             transaction_support = not settings.DISABLE_TRANSACTION_MANAGEMENT
+        if hasattr(settings, 'DATABASE_SUPPORTS_TRANSACTIONS'):
+            if not settings.DATABASE_SUPPORTS_TRANSACTIONS:
+                transaction_support = False
 
         if transaction_support:
             self.restore_transaction_support(transaction)
