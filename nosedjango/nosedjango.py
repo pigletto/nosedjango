@@ -22,13 +22,13 @@ from django.core.management import setup_environ
 
 import re
 NT_ROOT = re.compile(r"^[a-zA-Z]:\\$")
-def get_SETTINGS_PATH():
+def get_settings_path(settings_module):
     '''
     Hunt down the settings.py module by going up the FS path
     '''
     cwd = os.getcwd()
     settings_filename = '%s.py' % (
-        os.environ['DJANGO_SETTINGS_MODULE'].split('.')[-1]
+        settings_module.split('.')[-1]
         )
     while cwd:
         if settings_filename in os.listdir(cwd):
@@ -40,8 +40,6 @@ def get_SETTINGS_PATH():
             return None
     return cwd
 
-SETTINGS_PATH = get_SETTINGS_PATH()
-
 def _dummy(*args, **kwargs):
     """Dummy function that replaces the transaction functions"""
     return
@@ -49,9 +47,7 @@ def _dummy(*args, **kwargs):
 class NoseDjango(Plugin):
     """
     Enable to set up django test environment before running all tests, and
-    tear it down after all tests. If the django database engine in use is not
-    sqlite3, one or both of --django-test-db or django-test-schema must be
-    specified.
+    tear it down after all tests.
 
     Note that your django project must be on PYTHONPATH for the settings file
     to be loaded. The plugin will help out by placing the nose working dir
@@ -83,30 +79,54 @@ class NoseDjango(Plugin):
         transaction.enter_transaction_management = self.orig_enter
         transaction.leave_transaction_management = self.orig_leave
 
+    def options(self, parser, env):
+        parser.add_option('--django-settings',
+                          help='Use custom Django settings module.',
+                          metavar='SETTINGS',
+                          )
+        super(NoseDjango, self).options(parser, env)
+
     def configure(self, options, conf):
-        Plugin.configure(self, options, conf)
         self.verbosity = conf.verbosity
+        if options.django_settings:
+            self.settings_module = options.django_settings
+        elif 'DJANGO_SETTINGS_MODULE' in os.environ:
+            self.settings_module = os.environ['DJANGO_SETTINGS_MODULE']
+        else:
+            self.settings_module = 'settings'
+        super(NoseDjango, self).configure(options, conf)
 
     def begin(self):
         """Create the test database and schema, if needed, and switch the
         connection over to that database. Then call install() to install
         all apps listed in the loaded settings module.
         """
-        # Add the working directory (and any package parents) to sys.path
-        # before trying to import django modules; otherwise, they won't be
-        # able to find project.settings if the working dir is project/ or
-        # project/..
-
-        if not SETTINGS_PATH:
-            sys.stderr.write("Can't find Django settings file!\n")
-            # short circuit if no settings file can be found
-            return
+        os.environ['DJANGO_SETTINGS_MODULE'] = self.settings_module
 
         if self.conf.addPaths:
             map(add_path, self.conf.where)
 
-        add_path(SETTINGS_PATH)
-        sys.path.append(SETTINGS_PATH)
+        try:
+            __import__(self.settings_module)
+            self.settings_path = self.settings_module
+        except ImportError:
+            # Settings module is not found in PYTHONPATH. Try to do
+            # some funky backwards crawling in directory tree, ie. add
+            # the working directory (and any package parents) to
+            # sys.path before trying to import django modules;
+            # otherwise, they won't be able to find project.settings
+            # if the working dir is project/ or project/..
+
+
+            self.settings_path = get_settings_path(self.settings_module)
+
+            if not self.settings_path:
+                # short circuit if no settings file can be found
+                raise RuntimeError("Can't find Django settings file!")
+
+            add_path(self.settings_path)
+            sys.path.append(self.settings_path)
+
         from django.conf import settings
 
         # Do our custom testrunner stuff
@@ -124,7 +144,6 @@ class NoseDjango(Plugin):
         self.old_db = settings.DATABASE_NAME
         from django.db import connection
 
-        # setup the test env for each test case
         setup_test_environment()
 
         from django.core import management
@@ -133,7 +152,6 @@ class NoseDjango(Plugin):
 
         connection.creation.create_test_db(verbosity=self.verbosity)
 
-        # exit the setup phase and let nose do it's thing
 
     def afterTest(self, test):
         # Restore transaction support on tests
@@ -157,19 +175,9 @@ class NoseDjango(Plugin):
 
     def beforeTest(self, test):
 
-        if not SETTINGS_PATH:
+        if not self.settings_path:
             # short circuit if no settings file can be found
             return
-
-        # This is a distinctive difference between the NoseDjango
-        # test runner compared to the plain Django test runner.
-        # Django uses the standard unittest framework and resets the
-        # database between each test *suite*.  That usually resolves
-        # into a test module.
-        #
-        # The NoseDjango test runner will reset the database between *every*
-        # test case.  This is more in the spirit of unittesting where there is
-        # no state information passed between individual tests.
 
         from django.core.management import call_command
         from django.core.urlresolvers import clear_url_caches
@@ -183,6 +191,9 @@ class NoseDjango(Plugin):
             # Do not use transactions if user has forbidden usage.
             # Assume that the database supports them anyway.
             transaction_support = not settings.DISABLE_TRANSACTION_MANAGEMENT
+        if (hasattr(settings, 'DATABASE_SUPPORTS_TRANSACTIONS') and
+            not settings.DATABASE_SUPPORTS_TRANSACTIONS):
+            transaction_support = False
         if transaction_support:
             transaction.enter_transaction_management()
             transaction.managed(True)
@@ -212,7 +223,7 @@ class NoseDjango(Plugin):
         """
         Clean up any created database and schema.
         """
-        if not SETTINGS_PATH:
+        if not self.settings_path:
             # short circuit if no settings file can be found
             return
 
