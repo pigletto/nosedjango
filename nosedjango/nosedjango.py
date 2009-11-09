@@ -4,11 +4,12 @@ database (or schema) and installs apps from test settings file before tests
 are run, and tears the test database (or schema) down after all tests are run.
 """
 
-import os, sys
+import os, sys, shutil
 import re
 
 from nose.plugins import Plugin
 import nose.case
+from django.core.files.storage import FileSystemStorage
 
 # Force settings.py pointer
 # search the current working directory and all parent directories to find
@@ -107,6 +108,9 @@ class NoseDjango(Plugin):
         add_path(SETTINGS_PATH)
         sys.path.append(SETTINGS_PATH)
         from django.conf import settings
+
+        # Do our custom testrunner stuff
+        custom_before()
 
         # Some Django code paths evaluate differently
         # between DEBUG and not DEBUG.  Example of this include the url
@@ -215,6 +219,10 @@ class NoseDjango(Plugin):
         from django.test.utils import teardown_test_environment
         from django.db import connection
         from django.conf import settings
+
+        # Clean up our custom testrunner stuff
+        custom_after()
+
         connection.creation.destroy_test_db(self.old_db, verbosity=self.verbosity)
         teardown_test_environment()
 
@@ -222,3 +230,70 @@ class NoseDjango(Plugin):
             settings.ROOT_URLCONF = self.old_urlconf
             clear_url_caches()
 
+def custom_before():
+    setup_fs = SetupTestFilesystem()
+    setup_celery = SetupCeleryTesting()
+    setup_cache = SetupCacheTesting()
+
+    setup_fs.before()
+    setup_celery.before()
+    setup_cache.before()
+
+def custom_after():
+    setup_fs = SetupTestFilesystem()
+    setup_celery = SetupCeleryTesting()
+    setup_cache = SetupCacheTesting()
+
+    setup_fs.after()
+    setup_celery.after()
+    setup_cache.after()
+
+class TestFileSystemStorage(FileSystemStorage):
+        """
+        Filesystem storage that puts files in a special test folder that can
+        be deleted before and after tests.
+        """
+        def __init__(self, location=None, base_url=None, *args, **kwargs):
+            location = SetupTestFilesystem.TEST_MEDIA_ROOT
+            base_url = SetupTestFilesystem.TEST_MEDIA_URL
+            return super(TestFileSystemStorage, self).__init__(location, base_url, *args, **kwargs)
+
+class SetupTestFilesystem():
+    """
+    Set up a test file system so you're writing to a specific directory for your
+    testing.
+    """
+    from django.conf import settings
+    TEST_MEDIA_ROOT = os.path.join(settings.MEDIA_ROOT, 'test_media')
+    TEST_MEDIA_URL = os.path.join(settings.MEDIA_URL, 'test_media/')
+
+
+    def before(self):
+        from django.conf import settings
+        settings.DEFAULT_FILE_STORAGE = 'nosedjango.nosedjango.TestFileSystemStorage'
+
+    def after(self):
+        self.clear_test_media()
+
+    def clear_test_media(self):
+        try:
+            shutil.rmtree(SetupTestFilesystem.TEST_MEDIA_ROOT)
+        except OSError:
+            pass
+
+
+class SetupCeleryTesting():
+    def before(self):
+        from django.conf import settings
+        settings.CELERY_ALWAYS_EAGER = True
+
+    def after(self):
+        pass
+
+class SetupCacheTesting():
+    def before(self):
+        from django.conf import settings
+        settings.CACHE_BACKEND = 'locmem://'
+
+    def after(self):
+        pass
