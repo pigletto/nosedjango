@@ -249,6 +249,9 @@ def custom_before():
     setup_celery = SetupCeleryTesting()
     setup_cache = SetupCacheTesting()
 
+    from django.conf import settings
+    settings.DOCUMENT_PRINTING_CACHE_ON_SAVE = False
+
     setup_fs.before()
     setup_celery.before()
     setup_cache.before()
