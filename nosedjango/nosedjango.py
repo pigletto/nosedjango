@@ -84,6 +84,10 @@ class NoseDjango(Plugin):
                           help='Use custom Django settings module.',
                           metavar='SETTINGS',
                           )
+        parser.add_option('--django-sqlite',
+                          help='Use in-memory sqlite for the tests',
+                          metavar='use_sqlite',
+                          )
         super(NoseDjango, self).options(parser, env)
 
     def configure(self, options, conf):
@@ -94,6 +98,11 @@ class NoseDjango(Plugin):
             self.settings_module = os.environ['DJANGO_SETTINGS_MODULE']
         else:
             self.settings_module = 'settings'
+
+        self._use_sqlite = False
+        if options.django_sqlite:
+            self._use_sqlite = True
+
         super(NoseDjango, self).configure(options, conf)
 
     def begin(self):
@@ -128,6 +137,14 @@ class NoseDjango(Plugin):
             sys.path.append(self.settings_path)
 
         from django.conf import settings
+
+        # If the user passed in --django-sqlite, use an in-memory sqlite db
+        settings.DATABASE_ENGINE = 'sqlite3'
+        settings.DATABASE_NAME = '' # in-memory database
+        settings.DATABASE_OPTIONS = {}
+        settings.DATABASE_USER = ''
+        settings.DATABASE_PASSWORD = ''
+        settings.SOUTH_TESTS_MIGRATE = False
 
         # Do our custom testrunner stuff
         custom_before()
