@@ -152,12 +152,12 @@ class NoseDjango(Plugin):
 
         connection.creation.create_test_db(verbosity=self.verbosity)
 
-
-    def afterTest(self, test):
-        # Restore transaction support on tests
-        from django.conf import settings
-        from django.db import connection, transaction
+    def _supports_transactions(self, test, settings):
+        """
+        Determine if the given test supports transaction management.
+        """
         transaction_support = True
+
         if hasattr(test.context, 'use_transaction'):
             transaction_support = test.context.use_transaction
         if hasattr(settings, 'DISABLE_TRANSACTION_MANAGEMENT'):
@@ -168,10 +168,18 @@ class NoseDjango(Plugin):
             if not settings.DATABASE_SUPPORTS_TRANSACTIONS:
                 transaction_support = False
 
-        if transaction_support:
+        return transaction_support
+
+    def afterTest(self, test):
+        # Restore transaction support on tests
+        from django.conf import settings
+        from django.db import connection, transaction
+
+        if self._managing_transactions:
             self.restore_transaction_support(transaction)
             transaction.rollback()
-            transaction.leave_transaction_management()
+            if transaction.is_managed():
+                transaction.leave_transaction_management()
             # If connection is not closed Postgres can go wild with
             # character encodings.
             connection.close()
@@ -187,16 +195,9 @@ class NoseDjango(Plugin):
         from django.conf import settings
         from django.db import connection, transaction
 
-        transaction_support = True
-        if hasattr(test.context, 'use_transaction'):
-            transaction_support = test.context.use_transaction
-        if hasattr(settings, 'DISABLE_TRANSACTION_MANAGEMENT'):
-            # Do not use transactions if user has forbidden usage.
-            # Assume that the database supports them anyway.
-            transaction_support = not settings.DISABLE_TRANSACTION_MANAGEMENT
-        if (hasattr(settings, 'DATABASE_SUPPORTS_TRANSACTIONS') and
-            not settings.DATABASE_SUPPORTS_TRANSACTIONS):
-            transaction_support = False
+        transaction_support = self._supports_transactions(test, settings)
+        self._managing_transactions = transaction_support
+
         if transaction_support:
             transaction.enter_transaction_management()
             transaction.managed(True)
