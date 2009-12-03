@@ -145,7 +145,6 @@ class NoseDjango(Plugin):
             settings.DATABASE_OPTIONS = {}
             settings.DATABASE_USER = ''
             settings.DATABASE_PASSWORD = ''
-        settings.SOUTH_TESTS_MIGRATE = False
 
         # Do our custom testrunner stuff
         custom_before()
@@ -164,7 +163,6 @@ class NoseDjango(Plugin):
 
         setup_test_environment()
 
-        from django.core import management
         management.get_commands()
         management._commands['syncdb'] = 'django.core'
 
