@@ -139,11 +139,12 @@ class NoseDjango(Plugin):
         from django.conf import settings
 
         # If the user passed in --django-sqlite, use an in-memory sqlite db
-        settings.DATABASE_ENGINE = 'sqlite3'
-        settings.DATABASE_NAME = '' # in-memory database
-        settings.DATABASE_OPTIONS = {}
-        settings.DATABASE_USER = ''
-        settings.DATABASE_PASSWORD = ''
+        if self._use_sqlite:
+            settings.DATABASE_ENGINE = 'sqlite3'
+            settings.DATABASE_NAME = '' # in-memory database
+            settings.DATABASE_OPTIONS = {}
+            settings.DATABASE_USER = ''
+            settings.DATABASE_PASSWORD = ''
         settings.SOUTH_TESTS_MIGRATE = False
 
         # Do our custom testrunner stuff
