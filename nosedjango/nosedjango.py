@@ -86,7 +86,8 @@ class NoseDjango(Plugin):
                           )
         parser.add_option('--django-sqlite',
                           help='Use in-memory sqlite for the tests',
-                          metavar='use_sqlite',
+                          dest='use_sqlite', action="store_true",
+                          default=False
                           )
         super(NoseDjango, self).options(parser, env)
 
@@ -99,9 +100,7 @@ class NoseDjango(Plugin):
         else:
             self.settings_module = 'settings'
 
-        self._use_sqlite = False
-        if options.django_sqlite:
-            self._use_sqlite = True
+        self._use_sqlite = options.use_sqlite
 
         super(NoseDjango, self).configure(options, conf)
 
