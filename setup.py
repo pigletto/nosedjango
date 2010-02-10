@@ -18,6 +18,7 @@ setup(
     entry_points = {
         'nose.plugins': [
             'django = nosedjango.nosedjango:NoseDjango',
+            'cherrypyliveserver = nosedjango.nosedjango:CherryPyLiveServerPlugin',
             ]
         }
     )

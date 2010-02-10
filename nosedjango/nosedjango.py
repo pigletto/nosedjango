@@ -6,10 +6,14 @@ are run, and tears the test database (or schema) down after all tests are run.
 
 import os, sys, shutil
 import re
+import subprocess
+from time import sleep
 
 from nose.plugins import Plugin
 import nose.case
+
 from django.core.files.storage import FileSystemStorage
+from django.core.servers.basehttp import  AdminMediaHandler
 
 # Force settings.py pointer
 # search the current working directory and all parent directories to find
@@ -89,6 +93,9 @@ class NoseDjango(Plugin):
                           dest='use_sqlite', action="store_true",
                           default=False
                           )
+        parser.add_option('--xvfb-headless',
+                          help="Create an X virtual frame buffer at the given value for use in headless webdriver browser testing",
+                          default=None)
         super(NoseDjango, self).options(parser, env)
 
     def configure(self, options, conf):
@@ -101,6 +108,7 @@ class NoseDjango(Plugin):
             self.settings_module = 'settings'
 
         self._use_sqlite = options.use_sqlite
+        self._xvfb_headless = options.xvfb_headless
 
         super(NoseDjango, self).configure(options, conf)
 
@@ -144,6 +152,9 @@ class NoseDjango(Plugin):
             settings.DATABASE_OPTIONS = {}
             settings.DATABASE_USER = ''
             settings.DATABASE_PASSWORD = ''
+
+        if self._xvfb_headless:
+            subprocess.call(['xvfb', self._xvfb_headless, '-ac'])
 
         # Do our custom testrunner stuff
         custom_before()
@@ -330,3 +341,70 @@ class SetupCacheTesting():
 
     def after(self):
         pass
+
+
+# Next 3 plugins taken from django-sane-testing: http://github.com/Almad/django-sane-testing
+# By: Lukas "Almad" Linhart http://almad.net/
+#####
+### It was a nice try with Django server being threaded.
+### It still sucks for some cases (did I mentioned urllib2?),
+### so provide cherrypy as working alternative.
+### Do imports in method to avoid CP as dependency
+### Code originally written by Mikeal Rogers under Apache License.
+#####
+
+class CherryPyLiveServerPlugin(Plugin):
+    name = 'cherrypyliveserver'
+    activation_parameter = '--with-cherrypyliveserver'
+
+    def __init__(self):
+        Plugin.__init__(self)
+        self.server_started = False
+        self.server_thread = None
+
+    def options(self, parser, env=os.environ):
+        Plugin.options(self, parser, env)
+
+    def configure(self, options, config):
+        Plugin.configure(self, options, config)
+
+    def startTest(self, test):
+        from django.conf import settings
+        test_case = get_test_case_class(test)
+        test_instance = get_test_case_instance(test)
+        if not self.server_started and getattr(test_case, "start_live_server", False):
+            self.start_server(
+                address=getattr(settings, "LIVE_SERVER_ADDRESS", DEFAULT_LIVE_SERVER_ADDRESS),
+                port=int(getattr(settings, "LIVE_SERVER_PORT", DEFAULT_LIVE_SERVER_PORT))
+            )
+            self.server_started = True
+
+        enable_test(test_case, 'http_plugin_started')
+
+        # clear test client for test isolation
+        if test_instance:
+            test_instance.client = None
+
+    def finalize(self, result):
+        self.stop_test_server()
+
+    def start_server(self, address='0.0.0.0', port=8000):
+        _application = AdminMediaHandler(WSGIHandler())
+
+        def application(environ, start_response):
+            environ['PATH_INFO'] = environ['SCRIPT_NAME'] + environ['PATH_INFO']
+            return _application(environ, start_response)
+
+        from cherrypy.wsgiserver import CherryPyWSGIServer
+        from threading import Thread
+        self.httpd = CherryPyWSGIServer((address, port), application, server_name='django-test-http')
+        self.httpd_thread = Thread(target=self.httpd.start)
+        self.httpd_thread.start()
+        #FIXME: This could be avoided by passing self to thread class starting django
+        # and waiting for Event lock
+        sleep(.5)
+
+    def stop_test_server(self):
+        if self.server_started:
+            self.httpd.stop()
+            self.server_started = False
