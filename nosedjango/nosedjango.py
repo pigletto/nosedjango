@@ -13,6 +13,7 @@ from nose.plugins import Plugin
 import nose.case
 
 from django.core.files.storage import FileSystemStorage
+from django.core.handlers.wsgi import WSGIHandler
 from django.core.servers.basehttp import  AdminMediaHandler
 
 # Force settings.py pointer
@@ -24,7 +25,9 @@ if not 'DJANGO_SETTINGS_MODULE' in os.environ:
 
 from django.core.management import setup_environ
 
-import re
+DEFAULT_LIVE_SERVER_ADDRESS = '0.0.0.0'
+DEFAULT_LIVE_SERVER_PORT = '8000'
+
 NT_ROOT = re.compile(r"^[a-zA-Z]:\\$")
 def get_settings_path(settings_module):
     '''
@@ -47,6 +50,7 @@ def get_settings_path(settings_module):
 def _dummy(*args, **kwargs):
     """Dummy function that replaces the transaction functions"""
     return
+
 
 class NoseDjango(Plugin):
     """
@@ -233,14 +237,12 @@ class NoseDjango(Plugin):
             call_command('flush', verbosity=0, interactive=False)
 
         if isinstance(test, nose.case.Test) and \
-            isinstance(test.test, nose.case.MethodTestCase) and \
             hasattr(test.context, 'fixtures'):
                 # We have to use this slightly awkward syntax due to the fact
                 # that we're using *args and **kwargs together.
                 call_command('loaddata', *test.context.fixtures, **{'verbosity': 0})
 
         if isinstance(test, nose.case.Test) and \
-            isinstance(test.test, nose.case.MethodTestCase) and \
             hasattr(test.context, 'urls'):
                 # We have to use this slightly awkward syntax due to the fact
                 # that we're using *args and **kwargs together.
@@ -370,20 +372,15 @@ class CherryPyLiveServerPlugin(Plugin):
 
     def startTest(self, test):
         from django.conf import settings
-        test_case = get_test_case_class(test)
-        test_instance = get_test_case_instance(test)
-        if not self.server_started and getattr(test_case, "start_live_server", False):
+
+        if not self.server_started and \
+           getattr(test, 'start_live_server', False):
+
             self.start_server(
                 address=getattr(settings, "LIVE_SERVER_ADDRESS", DEFAULT_LIVE_SERVER_ADDRESS),
                 port=int(getattr(settings, "LIVE_SERVER_PORT", DEFAULT_LIVE_SERVER_PORT))
             )
             self.server_started = True
-
-        enable_test(test_case, 'http_plugin_started')
-
-        # clear test client for test isolation
-        if test_instance:
-            test_instance.client = None
 
     def finalize(self, result):
         self.stop_test_server()
