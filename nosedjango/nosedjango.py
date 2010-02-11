@@ -158,7 +158,12 @@ class NoseDjango(Plugin):
             settings.DATABASE_PASSWORD = ''
 
         if self._xvfb_headless:
-            subprocess.call(['xvfb', self._xvfb_headless, '-ac'])
+            try:
+                xvfb = subprocess.Popen(['xvfb', ':%s' % self._xvfb_headless, '-ac'], stderr=subprocess.PIPE)
+            except OSError:
+                # Newer distros use Xvfb
+                xvfb = subprocess.Popen(['Xvfb', ':%s' % self._xvfb_headless, '-ac'], stderr=subprocess.PIPE)
+            os.environ['DISPLAY'] = ':%s' % self._xvfb_headless
 
         # Do our custom testrunner stuff
         custom_before()
