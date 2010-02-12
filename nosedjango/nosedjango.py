@@ -242,12 +242,14 @@ class NoseDjango(Plugin):
             call_command('flush', verbosity=0, interactive=False)
 
         if isinstance(test, nose.case.Test) and \
-            hasattr(test.context, 'fixtures'):
+           isinstance(test.test, nose.case.MethodTestCase) and \
+           hasattr(test.context, 'fixtures'):
                 # We have to use this slightly awkward syntax due to the fact
                 # that we're using *args and **kwargs together.
                 call_command('loaddata', *test.context.fixtures, **{'verbosity': 0})
 
         if isinstance(test, nose.case.Test) and \
+           isinstance(test.test, nose.case.MethodTestCase) and \
             hasattr(test.context, 'urls'):
                 # We have to use this slightly awkward syntax due to the fact
                 # that we're using *args and **kwargs together.
