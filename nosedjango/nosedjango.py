@@ -412,3 +412,43 @@ class CherryPyLiveServerPlugin(Plugin):
         if self.server_started:
             self.httpd.stop()
             self.server_started = False
+
+
+class SeleniumPlugin(Plugin):
+    name = 'selenium'
+    activation_parameter = '--with-selenium'
+
+    def options(self, parser, env=os.environ):
+        parser.add_option('--selenium-ss-dir',
+                          help='Directory for failure screen shots.'
+                          )
+        Plugin.options(self, parser, env)
+
+    def configure(self, options, config):
+        if options.selenium_ss_dir:
+            self.ss_dir = os.path.abspath(options.selenium_ss_dir)
+        else:
+            self.ss_dir = os.path.abspath('failure_screenshots')
+        Plugin.configure(self, options, config)
+
+    def handleError(self, test, err):
+        if isinstance(test, nose.case.Test) and \
+           getattr(test.context, 'selenium_take_ss', False):
+            self._take_screenshot(test)
+
+    def handleFailure(self, test, err):
+        if isinstance(test, nose.case.Test) and \
+           getattr(test.context, 'selenium_take_ss', False):
+            self._take_screenshot(test)
+
+    def _take_screenshot(self, test):
+        driver_attr = getattr(test.context, 'selenium_driver_attr', 'driver')
+        driver = getattr(test.test, driver_attr)
+
+        # Make the failure ss directory if it doesn't exist
+        if not os.path.exists(self.ss_dir):
+            os.makedirs(self.ss_dir)
+
+        ss_file = os.path.join(self.ss_dir, '%s.png' % test.id())
+
+        driver.save_screenshot(ss_file)

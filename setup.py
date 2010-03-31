@@ -19,6 +19,7 @@ setup(
         'nose.plugins': [
             'django = nosedjango.nosedjango:NoseDjango',
             'cherrypyliveserver = nosedjango.nosedjango:CherryPyLiveServerPlugin',
+            'selenium = nosedjango.nosedjango:SeleniumPlugin',
             ]
         }
     )
