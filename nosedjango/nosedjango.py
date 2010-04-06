@@ -187,6 +187,10 @@ class NoseDjango(Plugin):
 
         connection.creation.create_test_db(verbosity=self.verbosity)
 
+        # Save the content types to make sure we can keep them consistent
+        from django.contrib.contenttypes.models import ContentType
+        self._content_types = list(ContentType.objects.all())
+
     def _supports_transactions(self, test, settings):
         """
         Determine if the given test supports transaction management.
@@ -240,6 +244,12 @@ class NoseDjango(Plugin):
 
         else:
             call_command('flush', verbosity=0, interactive=False)
+            # Clear the content types cache between runs
+            from django.contrib.contenttypes.models import ContentType
+            ContentType.objects.clear_cache()
+            for ct in self._content_types:
+                ct.save()
+
 
         if isinstance(test, nose.case.Test) and \
            isinstance(test.test, nose.case.MethodTestCase) and \
