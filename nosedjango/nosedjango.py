@@ -443,7 +443,11 @@ class SeleniumPlugin(Plugin):
 
     def _take_screenshot(self, test):
         driver_attr = getattr(test.context, 'selenium_driver_attr', 'driver')
-        driver = getattr(test.test, driver_attr)
+        try:
+            driver = getattr(test.test, driver_attr)
+        except AttributeError:
+            print "Error attempting to take failure screenshot"
+            return
 
         # Make the failure ss directory if it doesn't exist
         if not os.path.exists(self.ss_dir):
