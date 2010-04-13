@@ -493,53 +493,49 @@ class DjangoSphinxPlugin(Plugin):
 
     def startTest(self, test):
         from django.conf import settings
-        if settings.DATABASE_ENGINE != 'mysql':
-            return
+        if settings.DATABASE_ENGINE == 'mysql':
+            # Using startTest instead of beforeTest so that we can be sure that
+            # the fixtures were already loaded with nosedjango's beforeTest
+            build_sphinx_index = getattr(test, 'build_sphinx_index', False)
+            run_sphinx_searchd = getattr(test, 'run_sphinx_searchd', False)
 
-        # Using startTest instead of beforeTest so that we can be sure that
-        # the fixtures were already loaded with nosedjango's beforeTest
-        build_sphinx_index = getattr(test, 'build_sphinx_index', False)
-        run_sphinx_searchd = getattr(test, 'run_sphinx_searchd', False)
+            if run_sphinx_searchd:
+                # Need to build the config
 
-        if run_sphinx_searchd:
-            # Need to build the config
+                # Update the DjangoSphinx client to use the proper port and index
+                settings.SPHINX_PORT = self.searchd_port
+                from djangosphinx import models as dj_sphinx_models
+                dj_sphinx_models.SPHINX_PORT = self.searchd_port
 
-            # Update the DjangoSphinx client to use the proper port and index
-            settings.SPHINX_PORT = self.searchd_port
-            from djangosphinx import models as dj_sphinx_models
-            dj_sphinx_models.SPHINX_PORT = self.searchd_port
+                # Generate the sphinx configuration file from the template
+                sphinx_config_path = os.path.join(self.tmp_sphinx_dir, 'sphinx.conf')
 
-            # Generate the sphinx configuration file from the template
-            sphinx_config_path = os.path.join(self.tmp_sphinx_dir, 'sphinx.conf')
+                with open(self.sphinx_config_tpl, 'r') as tpl_f:
+                    context = {
+                        'database_name': 'test_dev',
+                        'database_username': 'root',
+                        'database_password': '',
+                        'sphinx_search_data_dir': self.tmp_sphinx_dir,
+                        'searchd_log_dir': self.tmp_sphinx_dir,
+                    }
+                    tpl = tpl_f.read()
+                    output = tpl % context
 
-            with open(self.sphinx_config_tpl, 'r') as tpl_f:
-                context = {
-                    'database_name': 'test_dev',
-                    'database_username': 'root',
-                    'database_password': '',
-                    'sphinx_search_data_dir': self.tmp_sphinx_dir,
-                    'searchd_log_dir': self.tmp_sphinx_dir,
-                }
-                tpl = tpl_f.read()
-                output = tpl % context
-
-                with open(sphinx_config_path, 'w') as sphinx_conf_f:
-                    sphinx_conf_f.write(output)
-                    sphinx_conf_f.flush()
+                    with open(sphinx_config_path, 'w') as sphinx_conf_f:
+                        sphinx_conf_f.write(output)
+                        sphinx_conf_f.flush()
 
 
-        if build_sphinx_index:
-            self._build_sphinx_index(sphinx_config_path)
-        if run_sphinx_searchd:
-            self._start_searchd(sphinx_config_path)
+            if build_sphinx_index:
+                self._build_sphinx_index(sphinx_config_path)
+            if run_sphinx_searchd:
+                self._start_searchd(sphinx_config_path)
 
     def afterTest(self, test):
         from django.conf import settings
-        if settings.DATABASE_ENGINE != 'mysql':
-            return
-
-        if getattr(test.context, 'run_sphinx_searchd', False):
-            self._stop_searchd()
+        if settings.DATABASE_ENGINE == 'mysql':
+            if getattr(test.context, 'run_sphinx_searchd', False):
+                self._stop_searchd()
 
     def finalize(self, test):
         # Delete the temporary sphinx directory
