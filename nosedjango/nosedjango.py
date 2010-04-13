@@ -492,6 +492,10 @@ class DjangoSphinxPlugin(Plugin):
         Plugin.configure(self, options, config)
 
     def startTest(self, test):
+        from django.conf import settings
+        if settings.DATABASE_ENGINE != 'mysql':
+            return
+
         # Using startTest instead of beforeTest so that we can be sure that
         # the fixtures were already loaded with nosedjango's beforeTest
         build_sphinx_index = getattr(test, 'build_sphinx_index', False)
@@ -499,7 +503,6 @@ class DjangoSphinxPlugin(Plugin):
 
         if run_sphinx_searchd:
             # Need to build the config
-            from django.conf import settings
 
             # Update the DjangoSphinx client to use the proper port and index
             settings.SPHINX_PORT = self.searchd_port
@@ -531,6 +534,10 @@ class DjangoSphinxPlugin(Plugin):
             self._start_searchd(sphinx_config_path)
 
     def afterTest(self, test):
+        from django.conf import settings
+        if settings.DATABASE_ENGINE != 'mysql':
+            return
+
         if getattr(test.context, 'run_sphinx_searchd', False):
             self._stop_searchd()
 
