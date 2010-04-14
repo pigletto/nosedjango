@@ -465,7 +465,6 @@ class SeleniumPlugin(Plugin):
 
 class DjangoSphinxPlugin(Plugin):
     name = 'djangosphinx'
-    activation_parameter = '--with-djangosphinx'
 
     def options(self, parser, env=os.environ):
         """
@@ -480,16 +479,19 @@ class DjangoSphinxPlugin(Plugin):
         """
         parser.add_option('--sphinx-config-tpl',
                           help='Path to the Sphinx configuration file template.')
-        Plugin.options(self, parser, env)
+
+        super(DjangoSphinxPlugin, self).options(parser, env)
 
     def configure(self, options, config):
-        self.sphinx_config_tpl = os.path.abspath(options.sphinx_config_tpl)
+        if options.sphinx_config_tpl:
+            self.sphinx_config_tpl = os.path.abspath(options.sphinx_config_tpl)
 
-        # Create a directory for storing the configs, logs and index files
-        self.tmp_sphinx_dir = tempfile.mkdtemp()
+            # Create a directory for storing the configs, logs and index files
+            self.tmp_sphinx_dir = tempfile.mkdtemp()
 
-        self.searchd_port = 45798
-        Plugin.configure(self, options, config)
+            self.searchd_port = 45798
+
+        super(DjangoSphinxPlugin, self).configure(options, config)
 
     def startTest(self, test):
         from django.conf import settings
