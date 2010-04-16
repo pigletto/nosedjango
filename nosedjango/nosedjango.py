@@ -555,7 +555,7 @@ class DjangoSphinxPlugin(Plugin):
 
         returned = self._searchd.poll()
         if returned != None:
-            raise SkipTest("Sphinx Search unavailable. searchd exited with code: %s" % returned)
+            print "Sphinx Search unavailable. searchd exited with code: %s" % returned
 
     def _stop_searchd(self):
         if not self._searchd.poll():
