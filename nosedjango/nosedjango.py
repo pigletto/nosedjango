@@ -514,9 +514,9 @@ class DjangoSphinxPlugin(Plugin):
 
                 with open(self.sphinx_config_tpl, 'r') as tpl_f:
                     context = {
-                        'database_name': 'test_dev',
-                        'database_username': 'root',
-                        'database_password': '',
+                        'database_name': settings.DATABASE_NAME,
+                        'database_username': settings.DATABASE_USER,
+                        'database_password': settings.DATABASE_PASSWORD,
                         'sphinx_search_data_dir': self.tmp_sphinx_dir,
                         'searchd_log_dir': self.tmp_sphinx_dir,
                     }
@@ -544,8 +544,13 @@ class DjangoSphinxPlugin(Plugin):
         shutil.rmtree(self.tmp_sphinx_dir, ignore_errors=True)
 
     def _build_sphinx_index(self, config):
-        subprocess.call(['indexer', '--config', config, '--all'],
+        indexer = subprocess.Popen(['indexer', '--config', config, '--all'],
                         stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        if indexer.wait() != 0:
+            print "Sphinx Indexing Problem"
+            stdout, stderr = indexer.communicate()
+            print "stdout: %s" % stdout
+            print "stderr: %s" % stderr
 
     def _start_searchd(self, config):
         self._searchd = subprocess.Popen(
@@ -556,6 +561,9 @@ class DjangoSphinxPlugin(Plugin):
         returned = self._searchd.poll()
         if returned != None:
             print "Sphinx Search unavailable. searchd exited with code: %s" % returned
+            stdout, stderr = self._searchd.communicate()
+            print "stdout: %s" % stdout
+            print "stderr: %s" % stderr
 
     def _stop_searchd(self):
         if not self._searchd.poll():
