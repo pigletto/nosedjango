@@ -352,6 +352,7 @@ class SetupCacheTesting():
     def before(self):
         from django.conf import settings
         settings.CACHE_BACKEND = 'locmem://'
+        settings.DISABLE_QUERYSET_CACHE = True
 
     def after(self):
         pass
