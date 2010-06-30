@@ -9,7 +9,7 @@ setup(
         'and apps. Sets up a test database (or schema) and installs apps ' \
         'from test settings file before tests are run, and tears the test ' \
         'database (or schema) down after all tests are run.',
-    install_requires='nose>=0.10',
+    install_requires='nose>=0.11',
     url = "http://www.assembla.com/spaces/nosedjango",
     license = 'GNU LGPL',
     packages = find_packages(),
