@@ -439,6 +439,7 @@ class SeleniumPlugin(Plugin):
 
     def afterTest(self, test):
         if getattr(test.context, 'selenium', False):
+            driver_attr = getattr(test.context, 'selenium_driver_attr', 'driver')
             driver = getattr(test.test, driver_attr)
             driver.quit()
 
