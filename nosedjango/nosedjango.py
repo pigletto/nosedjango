@@ -164,10 +164,10 @@ class NoseDjango(Plugin):
 
         if self._xvfb_headless:
             try:
-                xvfb = subprocess.Popen(['xvfb', ':%s' % self._xvfb_headless, '-ac'], stderr=subprocess.PIPE)
+                xvfb = subprocess.Popen(['xvfb', ':%s' % self._xvfb_headless, '-ac', '-screen', 'root', '1024x768x24'], stderr=subprocess.PIPE)
             except OSError:
                 # Newer distros use Xvfb
-                xvfb = subprocess.Popen(['Xvfb', ':%s' % self._xvfb_headless, '-ac'], stderr=subprocess.PIPE)
+                xvfb = subprocess.Popen(['Xvfb', ':%s' % self._xvfb_headless, '-ac', '-screen', 'root', '1024x768x24'], stderr=subprocess.PIPE)
             os.environ['DISPLAY'] = ':%s' % self._xvfb_headless
 
         # Do our custom testrunner stuff
@@ -436,6 +436,11 @@ class SeleniumPlugin(Plugin):
         else:
             self.ss_dir = os.path.abspath('failure_screenshots')
         Plugin.configure(self, options, config)
+
+    def afterTest(self, test):
+        if getattr(test.context, 'selenium', False):
+            driver = getattr(test.test, driver_attr)
+            driver.quit()
 
     def handleError(self, test, err):
         if isinstance(test, nose.case.Test) and \
