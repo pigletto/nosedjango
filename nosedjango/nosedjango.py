@@ -102,9 +102,6 @@ class NoseDjango(Plugin):
                           dest='use_sqlite', action="store_true",
                           default=False
                           )
-        parser.add_option('--xvfb-headless',
-                          help="Create an X virtual frame buffer at the given value for use in headless webdriver browser testing",
-                          default=None)
         super(NoseDjango, self).options(parser, env)
 
     def configure(self, options, conf):
@@ -117,7 +114,6 @@ class NoseDjango(Plugin):
             self.settings_module = 'settings'
 
         self._use_sqlite = options.use_sqlite
-        self._xvfb_headless = options.xvfb_headless
 
         super(NoseDjango, self).configure(options, conf)
 
@@ -142,7 +138,6 @@ class NoseDjango(Plugin):
             # otherwise, they won't be able to find project.settings
             # if the working dir is project/ or project/..
 
-
             self.settings_path = get_settings_path(self.settings_module)
 
             if not self.settings_path:
@@ -161,14 +156,6 @@ class NoseDjango(Plugin):
             settings.DATABASE_OPTIONS = {}
             settings.DATABASE_USER = ''
             settings.DATABASE_PASSWORD = ''
-
-        if self._xvfb_headless:
-            try:
-                xvfb = subprocess.Popen(['xvfb', ':%s' % self._xvfb_headless, '-ac', '-screen', 'root', '1024x768x24'], stderr=subprocess.PIPE)
-            except OSError:
-                # Newer distros use Xvfb
-                xvfb = subprocess.Popen(['Xvfb', ':%s' % self._xvfb_headless, '-ac', '-screen', 'root', '1024x768x24'], stderr=subprocess.PIPE)
-            os.environ['DISPLAY'] = ':%s' % self._xvfb_headless
 
         # Do our custom testrunner stuff
         custom_before()
@@ -261,7 +248,6 @@ class NoseDjango(Plugin):
                 self.old_urlconf = settings.ROOT_URLCONF
                 settings.ROOT_URLCONF = self.urls
                 clear_url_caches()
-
 
     def finalize(self, result=None):
         """
@@ -428,6 +414,9 @@ class SeleniumPlugin(Plugin):
         parser.add_option('--selenium-ss-dir',
                           help='Directory for failure screen shots.'
                           )
+        parser.add_option('--headless',
+                          help="Run the Selenium tests in a headless mode, with virtual frames starting with the given index (eg. 1)",
+                          default=None)
         Plugin.options(self, parser, env)
 
     def configure(self, options, config):
@@ -435,13 +424,34 @@ class SeleniumPlugin(Plugin):
             self.ss_dir = os.path.abspath(options.selenium_ss_dir)
         else:
             self.ss_dir = os.path.abspath('failure_screenshots')
+
+        self.x_display_counter = 1
+        self.run_headless = False
+        if options.headless:
+            self.run_headless = True
+            self.x_display_counter = int(options.headless)
+
         Plugin.configure(self, options, config)
+
+    def beforeTest(self, test):
+        self.xvfb_process = None
+        if getattr(test.context, 'selenium', False) and self.run_headless:
+            try:
+                self.xvfb_process = subprocess.Popen(['xvfb', ':%s' % self.x_display_counter, '-ac', '-screen', '0', '1024x768x24'], stderr=subprocess.PIPE)
+            except OSError:
+                # Newer distros use Xvfb
+                self.xvfb_process = subprocess.Popen(['Xvfb', ':%s' % self.x_display_counter, '-ac', '-screen', '0', '1024x768x24'], stderr=subprocess.PIPE)
+            os.environ['DISPLAY'] = ':%s' % self.x_display_counter
+            self.x_display_counter += 1
 
     def afterTest(self, test):
         if getattr(test.context, 'selenium', False):
             driver_attr = getattr(test.context, 'selenium_driver_attr', 'driver')
             driver = getattr(test.test, driver_attr)
             driver.quit()
+        if self.xvfb_process:
+            os.kill(self.xvfb_process.pid, 9)
+            os.waitpid(self.xvfb_process.pid, 0)
 
     def handleError(self, test, err):
         if isinstance(test, nose.case.Test) and \
