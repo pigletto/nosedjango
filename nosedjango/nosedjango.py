@@ -250,6 +250,9 @@ class NoseDjango(Plugin):
                 settings.ROOT_URLCONF = self.urls
                 clear_url_caches()
 
+        randomize_autoincrements = RandomizeAutoincrements()
+        randomize_autoincrements.before()
+
     def finalize(self, result=None):
         """
         Clean up any created database and schema.
@@ -352,6 +355,39 @@ class SetupCacheTesting():
     def after(self):
         pass
 
+class RandomizeAutoincrements():
+    """
+    Plugin to make the autoincrements random to catch any tests or functionality
+    relying on autoincrement behavior which is subject to concurrency and
+    database-specific quirks
+    """
+    def before(self):
+        from django.db import connection
+        from django.db.models import get_models
+
+        HELLA_BIG_NUM = 9999999
+        # Probably some better way of getting connection type, but we can't rely on settings
+        if 'sqlite' in connection.__module__:
+            pass
+        elif 'mysql' in connection.__module__:
+            # Reference: http://dev.mysql.com/doc/refman/5.0/en/example-auto-increment.html
+            cursor = connection.cursor()
+
+            incr = random.choice(range(1, 10))
+            offset = random.choice(range(1, HELLA_BIG_NUM))
+            cursor.execute('SET SESSION auto_increment_increment = %s' % incr)
+
+            SQL_TPL = 'ALTER TABLE %s AUTO_INCREMENT = %s;'
+            for model in get_models():
+                table = model._meta.db_table
+                # Can't use normal params because it tries to escape the table name
+                cursor.execute(SQL_TPL % (table, offset))
+        else:
+            raise NotImplementedError(
+                "Don't know how to randomize autoincrements for this database type")
+
+    def after(self):
+        pass
 
 # Next 3 plugins taken from django-sane-testing: http://github.com/Almad/django-sane-testing
 # By: Lukas "Almad" Linhart http://almad.net/
