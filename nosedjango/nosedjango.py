@@ -180,30 +180,47 @@ class NoseDjango(Plugin):
 
         connection.creation.create_test_db(verbosity=self.verbosity)
 
-    def _supports_transactions(self, test, settings):
+    def _should_use_transaction_isolation(self, test, settings):
         """
-        Determine if the given test supports transaction management.
-        """
-        transaction_support = True
+        Determine if the given test supports transaction management for database
+        rollback test isolation and also whether or not the test has opted out
+        of that support.
 
-        if hasattr(test.context, 'use_transaction'):
-            transaction_support = test.context.use_transaction
-        if hasattr(settings, 'DISABLE_TRANSACTION_MANAGEMENT'):
+        Transactions make database rollback much quicker when supported, with
+        the caveat that any tests that are explicitly testing transactions won't
+        work properly and any tests that depend on external access to the test
+        database won't be able to view data created/altered during the test.
+        """
+        from django.test import TransactionTestCase, TestCase
+
+        if not getattr(test.context, 'use_transaction_isolation', True):
+            # The test explicitly says not to use transaction isolation
+            return False
+        if getattr(settings, 'DISABLE_TRANSACTION_MANAGEMENT', False):
             # Do not use transactions if user has forbidden usage.
-            # Assume that the database supports them anyway.
-            transaction_support = not settings.DISABLE_TRANSACTION_MANAGEMENT
+            return False
         if hasattr(settings, 'DATABASE_SUPPORTS_TRANSACTIONS'):
             if not settings.DATABASE_SUPPORTS_TRANSACTIONS:
-                transaction_support = False
+                # The DB doesn't support transactions. Don't try it
+                return False
 
-        return transaction_support
+        # If we're a subclass of TransactionTestCase, then either we shouldn't
+        # manage transactions because the test needs to handle it or we can
+        # use a transaction but Django's testcase will handle it themselves
+        if isinstance(test.test, TransactionTestCase):
+            return False
+
+        return True
 
     def afterTest(self, test):
+        """
+        Clean up any changes to the test database.
+        """
         # Restore transaction support on tests
         from django.conf import settings
         from django.db import connection, transaction
 
-        if self._managing_transactions:
+        if self._should_use_transaction_isolation(test, settings):
             self.restore_transaction_support(transaction)
             transaction.rollback()
             if transaction.is_managed():
@@ -213,7 +230,10 @@ class NoseDjango(Plugin):
             connection.close()
 
     def beforeTest(self, test):
-
+        """
+        Load any database fixtures, set up any test url configurations and
+        prepare for using transactions for database rollback if possible.
+        """
         if not self.settings_path:
             # short circuit if no settings file can be found
             return
@@ -222,27 +242,29 @@ class NoseDjango(Plugin):
         from django.core.urlresolvers import clear_url_caches
         from django.conf import settings
         from django.db import connection, transaction
+        from django.test import TransactionTestCase
 
-        transaction_support = self._supports_transactions(test, settings)
-        self._managing_transactions = transaction_support
+        use_transaction_isolation = self._should_use_transaction_isolation(test, settings)
 
-        if transaction_support:
+        if use_transaction_isolation:
             transaction.enter_transaction_management()
             transaction.managed(True)
             self.disable_transaction_support(transaction)
 
-        else:
-            call_command('flush', verbosity=0, interactive=False)
+            from django.contrib.sites.models import Site
+            Site.objects.clear_cache()
 
         if isinstance(test, nose.case.Test) and \
-           isinstance(test.test, nose.case.MethodTestCase) and \
-           hasattr(test.context, 'fixtures'):
+           not isinstance(test.test, TransactionTestCase):
+            # Mirrors django.test.testcases:TestCase
+            call_command('flush', verbosity=0, interactive=False)
+            if hasattr(test.context, 'fixtures'):
                 # We have to use this slightly awkward syntax due to the fact
                 # that we're using *args and **kwargs together.
                 call_command('loaddata', *test.context.fixtures, **{'verbosity': 0})
 
         if isinstance(test, nose.case.Test) and \
-           isinstance(test.test, nose.case.MethodTestCase) and \
+           not isinstance(test.test, TransactionTestCase) and \
             hasattr(test.context, 'urls'):
                 # We have to use this slightly awkward syntax due to the fact
                 # that we're using *args and **kwargs together.
