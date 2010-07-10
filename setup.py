@@ -21,7 +21,7 @@ setup(
             'cherrypyliveserver = nosedjango.plugins.cherrypy:CherryPyLiveServerPlugin',
             'djangofilestorage = nosedjango.plugins.file_storage:FileStoragePlugin',
             'selenium = nosedjango.nosedjango:SeleniumPlugin',
-            'djangosphinx = nosedjango.nosedjango:DjangoSphinxPlugin',
+            'djangosphinx = nosedjango.plugins.sphinx:SphinxPlugin',
             ]
         }
     )
