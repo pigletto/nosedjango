@@ -18,10 +18,6 @@ from nose.plugins import Plugin
 from nose.plugins.skip import SkipTest
 import nose.case
 
-from django.core.files.storage import FileSystemStorage
-from django.core.handlers.wsgi import WSGIHandler
-from django.core.servers.basehttp import  AdminMediaHandler
-
 # Force settings.py pointer
 # search the current working directory and all parent directories to find
 # the settings file
@@ -69,6 +65,11 @@ class NoseDjango(Plugin):
     (--no-path-adjustment) argument is set.
     """
     name = 'django'
+
+    def __init__(self):
+        Plugin.__init__(self)
+        self.nose_config = None
+        self.django_plugins = []
 
     def disable_transaction_support(self, transaction):
         self.orig_commit = transaction.commit
@@ -118,11 +119,22 @@ class NoseDjango(Plugin):
 
         super(NoseDjango, self).configure(options, conf)
 
+        self.nose_config = conf
+
+    def call_plugins_method(self, meth_name, *args, **kwargs):
+        for plugin in self.django_plugins:
+            if hasattr(plugin, meth_name):
+                getattr(plugin, meth_name)(*args, **kwargs)
+
     def begin(self):
         """Create the test database and schema, if needed, and switch the
         connection over to that database. Then call install() to install
         all apps listed in the loaded settings module.
         """
+        for plugin in self.nose_config.plugins.plugins:
+            if getattr(plugin, 'django_plugin', False):
+                self.django_plugins.append(plugin)
+
         os.environ['DJANGO_SETTINGS_MODULE'] = self.settings_module
 
         if self.conf.addPaths:
@@ -160,6 +172,7 @@ class NoseDjango(Plugin):
 
         # Do our custom testrunner stuff
         custom_before()
+        self.call_plugins_method('beforeTestSetup', settings)
 
         # Some Django code paths evaluate differently
         # between DEBUG and not DEBUG.  Example of this include the url
@@ -173,6 +186,7 @@ class NoseDjango(Plugin):
         self.old_db = settings.DATABASE_NAME
         from django.db import connection
 
+        # beforeTestSetup(settings)
         setup_test_environment()
 
         management.get_commands()
@@ -220,6 +234,7 @@ class NoseDjango(Plugin):
         from django.conf import settings
         from django.db import connection, transaction
 
+        # beforeRollback(settings, connection, transaction)
         if self._should_use_transaction_isolation(test, settings):
             self.restore_transaction_support(transaction)
             transaction.rollback()
@@ -228,6 +243,8 @@ class NoseDjango(Plugin):
             # If connection is not closed Postgres can go wild with
             # character encodings.
             connection.close()
+
+        self.call_plugins_method('afterRollback', settings)
 
     def beforeTest(self, test):
         """
@@ -295,66 +312,21 @@ class NoseDjango(Plugin):
             clear_url_caches()
 
 def custom_before():
-    setup_fs = SetupTestFilesystem()
     setup_celery = SetupCeleryTesting()
     setup_cache = SetupCacheTesting()
 
     from django.conf import settings
     settings.DOCUMENT_PRINTING_CACHE_ON_SAVE = False
 
-    setup_fs.before()
     setup_celery.before()
     setup_cache.before()
 
 def custom_after():
-    setup_fs = SetupTestFilesystem()
     setup_celery = SetupCeleryTesting()
     setup_cache = SetupCacheTesting()
 
-    setup_fs.after()
     setup_celery.after()
     setup_cache.after()
-
-def random_token(bits=128):
-    """
-    Generates a random token, using the url-safe base64 alphabet.
-    The "bits" argument specifies the bits of randomness to use.
-    """
-    alphabet = string.ascii_letters + string.digits + '-_'
-    # alphabet length is 64, so each letter provides lg(64) = 6 bits
-    num_letters = int(math.ceil(bits / 6.0))
-    return ''.join(random.choice(alphabet) for i in range(num_letters))
-
-class TestFileSystemStorage(FileSystemStorage):
-        """
-        Filesystem storage that puts files in a special test folder that can
-        be deleted before and after tests.
-        """
-        def __init__(self, location=None, base_url=None, *args, **kwargs):
-            from django.conf import settings
-            token = random_token()
-            location = os.path.join(settings.MEDIA_ROOT, token)
-            base_url = os.path.join(settings.MEDIA_URL, '%s/' % token)
-            return super(TestFileSystemStorage, self).__init__(location, base_url, *args, **kwargs)
-
-class SetupTestFilesystem():
-    """
-    Set up a test file system so you're writing to a specific directory for your
-    testing.
-    """
-    def before(self):
-        from django.conf import settings
-        settings.DEFAULT_FILE_STORAGE = 'nosedjango.nosedjango.TestFileSystemStorage'
-
-    def after(self):
-        self.clear_test_media()
-
-    def clear_test_media(self):
-        tfs = TestFileSystemStorage()
-        try:
-            shutil.rmtree(tfs.location)
-        except OSError:
-            pass
 
 
 class SetupCeleryTesting():
@@ -374,67 +346,6 @@ class SetupCacheTesting():
     def after(self):
         pass
 
-
-# Next 3 plugins taken from django-sane-testing: http://github.com/Almad/django-sane-testing
-# By: Lukas "Almad" Linhart http://almad.net/
-#####
-### It was a nice try with Django server being threaded.
-### It still sucks for some cases (did I mentioned urllib2?),
-### so provide cherrypy as working alternative.
-### Do imports in method to avoid CP as dependency
-### Code originally written by Mikeal Rogers under Apache License.
-#####
-
-class CherryPyLiveServerPlugin(Plugin):
-    name = 'cherrypyliveserver'
-    activation_parameter = '--with-cherrypyliveserver'
-
-    def __init__(self):
-        Plugin.__init__(self)
-        self.server_started = False
-        self.server_thread = None
-
-    def options(self, parser, env=os.environ):
-        Plugin.options(self, parser, env)
-
-    def configure(self, options, config):
-        Plugin.configure(self, options, config)
-
-    def startTest(self, test):
-        from django.conf import settings
-
-        if not self.server_started and \
-           getattr(test, 'start_live_server', False):
-
-            self.start_server(
-                address=getattr(settings, "LIVE_SERVER_ADDRESS", DEFAULT_LIVE_SERVER_ADDRESS),
-                port=int(getattr(settings, "LIVE_SERVER_PORT", DEFAULT_LIVE_SERVER_PORT))
-            )
-            self.server_started = True
-
-    def finalize(self, result):
-        self.stop_test_server()
-
-    def start_server(self, address='0.0.0.0', port=8000):
-        _application = AdminMediaHandler(WSGIHandler())
-
-        def application(environ, start_response):
-            environ['PATH_INFO'] = environ['SCRIPT_NAME'] + environ['PATH_INFO']
-            return _application(environ, start_response)
-
-        from cherrypy.wsgiserver import CherryPyWSGIServer
-        from threading import Thread
-        self.httpd = CherryPyWSGIServer((address, port), application, server_name='django-test-http')
-        self.httpd_thread = Thread(target=self.httpd.start)
-        self.httpd_thread.start()
-        #FIXME: This could be avoided by passing self to thread class starting django
-        # and waiting for Event lock
-        sleep(.5)
-
-    def stop_test_server(self):
-        if self.server_started:
-            self.httpd.stop()
-            self.server_started = False
 
 
 class SeleniumPlugin(Plugin):
