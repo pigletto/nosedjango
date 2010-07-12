@@ -204,13 +204,20 @@ class NoseDjango(Plugin):
                 # The DB doesn't support transactions. Don't try it
                 return False
 
-        # If we're a subclass of TransactionTestCase, then either we shouldn't
-        # manage transactions because the test needs to handle it or we can
-        # use a transaction but Django's testcase will handle it themselves
-        if isinstance(test.test, TransactionTestCase):
-            return False
-
         return True
+
+    def _should_use_django_testcase_management(self, test):
+        """
+        Should we let Django's custom testcase classes handle the setup/teardown
+        operations for transaction rollback, fixture loading and urlconf loading.
+        """
+        from django.test import TransactionTestCase
+
+        # If we're a subclass of TransactionTestCase, then the testcase will
+        # handle any transaction setup, fixtures, or urlconfs
+        if isinstance(test.test, TransactionTestCase):
+            return True
+        return False
 
     def afterTest(self, test):
         """
@@ -219,8 +226,15 @@ class NoseDjango(Plugin):
         # Restore transaction support on tests
         from django.conf import settings
         from django.db import connection, transaction
+        from django.core.management import call_command
+        from django import VERSION as DJANGO_VERSION
 
-        if self._should_use_transaction_isolation(test, settings):
+        use_transaction_isolation = self._should_use_transaction_isolation(
+            test, settings)
+        using_django_testcase_management = self._should_use_django_testcase_management(test)
+
+        if use_transaction_isolation \
+           and not using_django_testcase_management:
             self.restore_transaction_support(transaction)
             transaction.rollback()
             if transaction.is_managed():
@@ -228,6 +242,37 @@ class NoseDjango(Plugin):
             # If connection is not closed Postgres can go wild with
             # character encodings.
             connection.close()
+        elif not use_transaction_isolation:
+            # Have to clear the db even if we're using django because django
+            # doesn't properly flush the database after a test. It relies on
+            # flushing before a test, so we want to avoid the case where a django
+            # test doesn't flush and then a normal test runs, because it will
+            # expect the db to already be flushed
+            call_command('flush', verbosity=0, interactive=False)
+
+            # In Django <1.2 Depending on the order of certain post-syncdb
+            # signals, ContentTypes can be removed accidentally. Manually delete and re-add all
+            # and recreate ContentTypes if we're using the contenttypes app
+            # See: http://code.djangoproject.com/ticket/9207
+            # See: http://code.djangoproject.com/ticket/7052
+            if DJANGO_VERSION[0] <= 1 and DJANGO_VERSION[1] < 2 \
+               and 'django.contrib.contenttypes' in settings.INSTALLED_APPS:
+                from django.contrib.contenttypes.models import ContentType
+                from django.contrib.contenttypes.management import update_all_contenttypes
+                for ct in ContentType.objects.all():
+                    ct.delete()
+                ContentType.objects.clear_cache()
+                update_all_contenttypes(verbosity=0)
+
+                # Because of various ways of handling auto-increment, we need to
+                # make sure the new contenttypes start at 1
+                next_pk = 1
+                content_types = list(ContentType.objects.all().order_by('pk'))
+                ContentType.objects.all().delete()
+                for ct in content_types:
+                    ct.pk = next_pk
+                    ct.save()
+                    next_pk += 1
 
     def beforeTest(self, test):
         """
@@ -244,9 +289,11 @@ class NoseDjango(Plugin):
         from django.db import connection, transaction
         from django.test import TransactionTestCase
 
-        use_transaction_isolation = self._should_use_transaction_isolation(test, settings)
+        use_transaction_isolation = self._should_use_transaction_isolation(
+            test, settings)
+        using_django_testcase_management = self._should_use_django_testcase_management(test)
 
-        if use_transaction_isolation:
+        if use_transaction_isolation and not using_django_testcase_management:
             transaction.enter_transaction_management()
             transaction.managed(True)
             self.disable_transaction_support(transaction)
@@ -254,18 +301,21 @@ class NoseDjango(Plugin):
             from django.contrib.sites.models import Site
             Site.objects.clear_cache()
 
-        if isinstance(test, nose.case.Test) and \
-           not isinstance(test.test, TransactionTestCase):
+        if isinstance(test, nose.case.Test) \
+           and not using_django_testcase_management:
             # Mirrors django.test.testcases:TestCase
-            call_command('flush', verbosity=0, interactive=False)
+
             if hasattr(test.context, 'fixtures'):
                 # We have to use this slightly awkward syntax due to the fact
                 # that we're using *args and **kwargs together.
-                call_command('loaddata', *test.context.fixtures, **{'verbosity': 0})
+                if use_transaction_isolation:
+                    call_command('loaddata', *test.context.fixtures, **{'verbosity': 0, 'commit': False})
+                else:
+                    call_command('loaddata', *test.context.fixtures, **{'verbosity': 0})
 
         if isinstance(test, nose.case.Test) and \
-           not isinstance(test.test, TransactionTestCase) and \
-            hasattr(test.context, 'urls'):
+           not using_django_testcase_management \
+           and hasattr(test.context, 'urls'):
                 # We have to use this slightly awkward syntax due to the fact
                 # that we're using *args and **kwargs together.
                 self.old_urlconf = settings.ROOT_URLCONF
