@@ -5,7 +5,6 @@ from django.core.files.storage import FileSystemStorage
 
 from nosedjango.plugins.base import Plugin
 
-
 class TestFileSystemStorage(FileSystemStorage):
     """
     Filesystem storage that puts files in a special test folder that can

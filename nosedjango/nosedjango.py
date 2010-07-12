@@ -172,7 +172,6 @@ class NoseDjango(Plugin):
 
         # Do our custom testrunner stuff
         custom_before()
-        self.call_plugins_method('beforeTestSetup', settings)
 
         # Some Django code paths evaluate differently
         # between DEBUG and not DEBUG.  Example of this include the url
@@ -186,13 +185,17 @@ class NoseDjango(Plugin):
         self.old_db = settings.DATABASE_NAME
         from django.db import connection
 
-        # beforeTestSetup(settings)
+        self.call_plugins_method(
+            'beforeTestSetup', settings, setup_test_environment, connection)
         setup_test_environment()
+        self.call_plugins_method('afterTestSetup', settings)
 
         management.get_commands()
         management._commands['syncdb'] = 'django.core'
 
+        self.call_plugins_method('beforeTestDb', settings, connection, management)
         connection.creation.create_test_db(verbosity=self.verbosity)
+        self.call_plugins_method('afterTestDb', settings, connection)
 
     def _should_use_transaction_isolation(self, test, settings):
         """
@@ -264,6 +267,8 @@ class NoseDjango(Plugin):
         use_transaction_isolation = self._should_use_transaction_isolation(test, settings)
 
         if use_transaction_isolation:
+            self.call_plugins_method('beforeTransactionManagement', settings, test)
+
             transaction.enter_transaction_management()
             transaction.managed(True)
             self.disable_transaction_support(transaction)
@@ -271,6 +276,9 @@ class NoseDjango(Plugin):
             from django.contrib.sites.models import Site
             Site.objects.clear_cache()
 
+            self.call_plugins_method('afterTransactionManagement', settings, test)
+
+        self.call_plugins_method('beforeFixtureLoad', settings, test)
         if isinstance(test, nose.case.Test) and \
            not isinstance(test.test, TransactionTestCase):
             # Mirrors django.test.testcases:TestCase
@@ -279,7 +287,9 @@ class NoseDjango(Plugin):
                 # We have to use this slightly awkward syntax due to the fact
                 # that we're using *args and **kwargs together.
                 call_command('loaddata', *test.context.fixtures, **{'verbosity': 0})
+        self.call_plugins_method('afterFixtureLoad', settings, test)
 
+        self.call_plugins_method('beforeUrlConfLoad', settings, test)
         if isinstance(test, nose.case.Test) and \
            not isinstance(test.test, TransactionTestCase) and \
             hasattr(test.context, 'urls'):
@@ -288,6 +298,7 @@ class NoseDjango(Plugin):
                 self.old_urlconf = settings.ROOT_URLCONF
                 settings.ROOT_URLCONF = self.urls
                 clear_url_caches()
+        self.call_plugins_method('afterUrlConfLoad', settings, test)
 
     def finalize(self, result=None):
         """
@@ -304,8 +315,14 @@ class NoseDjango(Plugin):
         # Clean up our custom testrunner stuff
         custom_after()
 
+        self.call_plugins_method('beforeDestroyTestDb', settings, connection)
         connection.creation.destroy_test_db(self.old_db, verbosity=self.verbosity)
+        self.call_plugins_method('afterDestroyTestDb', settings, connection)
+
+        self.call_plugins_method(
+            'beforeTeardownTestEnv', settings, teardown_test_environment)
         teardown_test_environment()
+        self.call_plugins_method('afterTeardownTestEnv', settings)
 
         if hasattr(self, 'old_urlconf'):
             settings.ROOT_URLCONF = self.old_urlconf
