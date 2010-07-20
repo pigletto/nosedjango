@@ -259,8 +259,11 @@ class NoseDjango(Plugin):
                and 'django.contrib.contenttypes' in settings.INSTALLED_APPS:
                 from django.contrib.contenttypes.models import ContentType
                 from django.contrib.contenttypes.management import update_all_contenttypes
-                for ct in ContentType.objects.all():
-                    ct.delete()
+                from django.db import models
+                from django.contrib.auth.management import create_permissions
+                from django.contrib.auth.models import Permission
+
+                ContentType.objects.all().delete()
                 ContentType.objects.clear_cache()
                 update_all_contenttypes(verbosity=0)
 
@@ -273,6 +276,13 @@ class NoseDjango(Plugin):
                     ct.pk = next_pk
                     ct.save()
                     next_pk += 1
+
+                # Because of the same problems with ContentTypes, we can get
+                # busted permissions
+                Permission.objects.all().delete()
+                for app in models.get_apps():
+                    create_permissions(app=app, created_models=None, verbosity=0)
+
 
     def beforeTest(self, test):
         """
