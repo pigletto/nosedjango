@@ -1,4 +1,44 @@
-from setuptools import setup, find_packages
+from setuptools import setup, find_packages, Command
+import os, subprocess, sys
+
+class RunTests(Command):
+    description = "Run the test suite from the tests dir."
+    user_options = []
+    extra_env = {}
+
+    def run(self):
+        for env_name, env_value in self.extra_env.items():
+            os.environ[env_name] = str(env_value)
+
+        setup_dir = os.path.abspath(os.path.dirname(__file__))
+        tests_dir = os.path.join(setup_dir, 'nosedjangotests')
+        os.chdir(tests_dir)
+        sys.path.append(tests_dir)
+
+        try:
+            import nose
+            import nosedjango
+        except ImportError:
+            print 'nose and nosedjango are required to run this test suite'
+            sys.exit(1)
+
+        cmd = [
+            'nosetests',
+            '--with-doctest',
+            '--with-django',
+            '--django-settings', 'nosedjangotests.settings',
+            'nosedjangotests.polls',
+        ]
+        subprocess.call(' '.join(cmd), shell=True)
+
+        os.chdir(setup_dir)
+
+    def initialize_options(self):
+        pass
+
+    def finalize_options(self):
+        pass
+
 
 setup(
     name='NoseDjango',
@@ -12,8 +52,9 @@ setup(
     install_requires='nose>=0.11',
     url = "http://www.assembla.com/spaces/nosedjango",
     license = 'GNU LGPL',
-    packages = find_packages(),
+    packages = find_packages(exclude=['nosedjangotests', 'nosedjangotests.*']),
     zip_safe = False,
+    cmdclass = {'nosetests': RunTests},
     include_package_data = True,
     entry_points = {
         'nose.plugins': [
