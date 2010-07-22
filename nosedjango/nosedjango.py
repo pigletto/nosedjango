@@ -285,6 +285,15 @@ class NoseDjango(Plugin):
                 for app in models.get_apps():
                     create_permissions(app=app, created_models=None, verbosity=0)
 
+                # Because of various ways of handling auto-increment, we need to
+                # make sure the new permissions start at 1
+                next_pk = 1
+                permissions = list(Permission.objects.all().order_by('pk'))
+                Permission.objects.all().delete()
+                for perm in permissions:
+                    perm.pk = next_pk
+                    perm.save()
+                    next_pk += 1
 
     def beforeTest(self, test):
         """
@@ -295,6 +304,8 @@ class NoseDjango(Plugin):
             # short circuit if no settings file can be found
             return
 
+	from django.contrib.sites.models import Site
+	from django.contrib.contenttypes.models import ContentType
         from django.core.management import call_command
         from django.core.urlresolvers import clear_url_caches
         from django.conf import settings
@@ -310,8 +321,8 @@ class NoseDjango(Plugin):
             transaction.managed(True)
             self.disable_transaction_support(transaction)
 
-            from django.contrib.sites.models import Site
-            Site.objects.clear_cache()
+	Site.objects.clear_cache()
+	ContentType.objects.clear_cache() # Otherwise django.contrib.auth.Permissions will depend on deleted ContentTypes
 
         if isinstance(test, nose.case.Test) \
            and not using_django_testcase_management:
@@ -572,6 +583,8 @@ class SeleniumPlugin(Plugin):
 
         driver.save_screenshot(ss_file)
 
+import socket
+import time
 
 class DjangoSphinxPlugin(Plugin):
     name = 'djangosphinx'
@@ -675,7 +688,39 @@ class DjangoSphinxPlugin(Plugin):
             print "stdout: %s" % stdout
             print "stderr: %s" % stderr
 
+	self._wait_for_connection(self.searchd_port)
+
+    def _wait_for_connection(self, port):
+	"""
+	Wait until we can make a socket connection to sphinx.
+	"""
+	connected = False
+	timed_out = False
+	max_tries = 10
+	num_tries = 0
+	wait_time = 0.5
+	while not connected and not timed_out:
+	    time.sleep(wait_time)
+	    try:
+		af = socket.AF_INET
+		addr = ( '127.0.0.1', port )
+		desc = '%s;%s' % addr
+		sock = socket.socket ( af, socket.SOCK_STREAM )
+		sock.connect ( addr )
+	    except socket.error, msg:
+		if sock:
+		    sock.close()
+		num_tries += 1
+		continue
+	    connected = True
+
+	if timed_out:
+	    print >> sys.stderr, "Error connecting to sphinx searchd"
+
     def _stop_searchd(self):
-        if not self._searchd.poll():
-            os.kill(self._searchd.pid, signal.SIGKILL)
-            self._searchd.wait()
+        try:
+            if not self._searchd.poll():
+                os.kill(self._searchd.pid, signal.SIGKILL)
+                self._searchd.wait()
+        except AttributeError:
+            print sys.stderr, "Error stoping sphinx search daemon"
