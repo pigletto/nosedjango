@@ -14,6 +14,10 @@ DATABASE_PASSWORD = ''
 DATABASE_HOST = ''
 DATABASE_PORT = ''
 
+#DATABASE_ENGINE = 'mysql'
+#DATABASE_NAME = 'nosedjango'
+#DATABASE_USER = 'root'
+
 TIME_ZONE = 'America/Chicago'
 LANGUAGE_CODE = 'en-us'
 SITE_ID = 1

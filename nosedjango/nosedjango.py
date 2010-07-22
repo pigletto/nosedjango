@@ -225,6 +225,7 @@ class NoseDjango(Plugin):
         """
         # Restore transaction support on tests
         from django.conf import settings
+        from django.contrib.contenttypes.models import ContentType
         from django.db import connection, transaction
         from django.core.management import call_command
         from django import VERSION as DJANGO_VERSION
@@ -248,6 +249,7 @@ class NoseDjango(Plugin):
             # flushing before a test, so we want to avoid the case where a django
             # test doesn't flush and then a normal test runs, because it will
             # expect the db to already be flushed
+            ContentType.objects.clear_cache() # Otherwise django.contrib.auth.Permissions will depend on deleted ContentTypes
             call_command('flush', verbosity=0, interactive=False)
 
             # In Django <1.2 Depending on the order of certain post-syncdb

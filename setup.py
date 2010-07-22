@@ -16,20 +16,20 @@ class RunTests(Command):
         sys.path.append(tests_dir)
 
         try:
-            import nose
+            from nose.core import TestProgram
             import nosedjango
         except ImportError:
             print 'nose and nosedjango are required to run this test suite'
             sys.exit(1)
 
-        cmd = [
-            'nosetests',
+        args = [
+            '-v',
             '--with-doctest',
             '--with-django',
             '--django-settings', 'nosedjangotests.settings',
             'nosedjangotests.polls',
         ]
-        subprocess.call(' '.join(cmd), shell=True)
+        TestProgram(argv=args)
 
         os.chdir(setup_dir)
 
