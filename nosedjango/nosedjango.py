@@ -530,17 +530,18 @@ class SeleniumPlugin(Plugin):
             self.ss_dir = os.path.abspath('failure_screenshots')
 
         self.x_display_counter = 1
+	self.x_display_offset = 1
         self.run_headless = False
         if options.headless:
             self.run_headless = True
-            self.x_display_counter = int(options.headless)
+            self.x_display_offset = int(options.headless)
 
         Plugin.configure(self, options, config)
 
     def beforeTest(self, test):
         self.xvfb_process = None
         if getattr(test.context, 'selenium', False) and self.run_headless:
-	    xvfb_display = self.x_display_counter % 2
+	    xvfb_display = (self.x_display_counter % 2) + self.x_display_offset
             try:
                 self.xvfb_process = subprocess.Popen(['xvfb', ':%s' % xvfb_display, '-ac', '-screen', '0', '1024x768x24'], stderr=subprocess.PIPE)
             except OSError:
