@@ -540,19 +540,23 @@ class SeleniumPlugin(Plugin):
     def beforeTest(self, test):
         self.xvfb_process = None
         if getattr(test.context, 'selenium', False) and self.run_headless:
+	    xvfb_display = self.x_display_counter % 2
             try:
-                self.xvfb_process = subprocess.Popen(['xvfb', ':%s' % self.x_display_counter, '-ac', '-screen', '0', '1024x768x24'], stderr=subprocess.PIPE)
+                self.xvfb_process = subprocess.Popen(['xvfb', ':%s' % xvfb_display, '-ac', '-screen', '0', '1024x768x24'], stderr=subprocess.PIPE)
             except OSError:
                 # Newer distros use Xvfb
-                self.xvfb_process = subprocess.Popen(['Xvfb', ':%s' % self.x_display_counter, '-ac', '-screen', '0', '1024x768x24'], stderr=subprocess.PIPE)
-            os.environ['DISPLAY'] = ':%s' % self.x_display_counter
+                self.xvfb_process = subprocess.Popen(['Xvfb', ':%s' % xvfb_display, '-ac', '-screen', '0', '1024x768x24'], stderr=subprocess.PIPE)
+            os.environ['DISPLAY'] = ':%s' % xvfb_display
             self.x_display_counter += 1
 
     def afterTest(self, test):
         if getattr(test.context, 'selenium', False):
             driver_attr = getattr(test.context, 'selenium_driver_attr', 'driver')
-            driver = getattr(test.test, driver_attr)
-            driver.quit()
+	    try:
+		driver = getattr(test.test, driver_attr)
+		driver.quit()
+	    except AttributeError:
+		print >> sys.stderr, "Error stopping selenium driver"
         if self.xvfb_process:
             os.kill(self.xvfb_process.pid, 9)
             os.waitpid(self.xvfb_process.pid, 0)
