@@ -556,7 +556,7 @@ class SeleniumPlugin(Plugin):
 	    try:
 		driver = getattr(test.test, driver_attr)
 		driver.quit()
-	    except AttributeError:
+	    except:
 		print >> sys.stderr, "Error stopping selenium driver"
         if self.xvfb_process:
             os.kill(self.xvfb_process.pid, 9)
