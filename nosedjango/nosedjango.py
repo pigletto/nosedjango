@@ -103,6 +103,11 @@ class NoseDjango(Plugin):
                           dest='use_sqlite', action="store_true",
                           default=False
                           )
+        parser.add_option('--django-testfs',
+                          help='Use a local isolated test filestyem',
+                          dest='use_testfs', action="store_true",
+                          default=False
+                          )
         super(NoseDjango, self).options(parser, env)
 
     def configure(self, options, conf):
@@ -115,6 +120,7 @@ class NoseDjango(Plugin):
             self.settings_module = 'settings'
 
         self._use_sqlite = options.use_sqlite
+	self._use_testfs = options.use_testfs
 
         super(NoseDjango, self).configure(options, conf)
 
@@ -159,7 +165,7 @@ class NoseDjango(Plugin):
             settings.DATABASE_PASSWORD = ''
 
         # Do our custom testrunner stuff
-        custom_before()
+        custom_before(use_testfs=self._use_testfs)
 
         # Some Django code paths evaluate differently
         # between DEBUG and not DEBUG.  Example of this include the url
@@ -358,7 +364,7 @@ class NoseDjango(Plugin):
         from django.conf import settings
 
         # Clean up our custom testrunner stuff
-        custom_after()
+        custom_after(use_testfs=self._use_testfs)
 
         connection.creation.destroy_test_db(self.old_db, verbosity=self.verbosity)
         teardown_test_environment()
@@ -367,24 +373,28 @@ class NoseDjango(Plugin):
             settings.ROOT_URLCONF = self.old_urlconf
             clear_url_caches()
 
-def custom_before():
-    setup_fs = SetupTestFilesystem()
+def custom_before(use_testfs=True):
+    if use_testfs:
+	setup_fs = SetupTestFilesystem()
     setup_celery = SetupCeleryTesting()
     setup_cache = SetupCacheTesting()
 
     from django.conf import settings
     settings.DOCUMENT_PRINTING_CACHE_ON_SAVE = False
 
-    setup_fs.before()
+    if use_testfs:
+	setup_fs.before()
     setup_celery.before()
     setup_cache.before()
 
-def custom_after():
-    setup_fs = SetupTestFilesystem()
+def custom_after(use_testfs=True):
+    if use_testfs:
+	setup_fs = SetupTestFilesystem()
     setup_celery = SetupCeleryTesting()
     setup_cache = SetupCacheTesting()
 
-    setup_fs.after()
+    if use_testfs:
+	setup_fs.after()
     setup_celery.after()
     setup_cache.after()
 
