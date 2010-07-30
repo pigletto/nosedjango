@@ -378,10 +378,18 @@ def custom_before(use_testfs=True):
 	setup_fs = SetupTestFilesystem()
     setup_celery = SetupCeleryTesting()
     setup_cache = SetupCacheTesting()
+    switched_settings = {
+        'DOCUMENT_BACKUP_STORAGE_DIR': 'unittest/document_backup/%(token)s/',
+        'DOCUMENT_BACKUP_STORAGE_BASE_URL': 'unittest/document_backup/%(token)s/',
+        'PRINTING_PDF_STORAGE_DIR': 'unittest/pdf_cache/%(token)s/',
+        'PRINTING_PDF_STORAGE_BASE_URL': 'unittest/pdf_cache/%(token)s/',
+    }
+    settings_switcher = SetupSettingsSwitcher(switched_settings)
 
     from django.conf import settings
     settings.DOCUMENT_PRINTING_CACHE_ON_SAVE = False
 
+    settings_switcher.before()
     if use_testfs:
 	setup_fs.before()
     setup_celery.before()
@@ -457,6 +465,19 @@ class SetupCacheTesting():
     def after(self):
         pass
 
+class SetupSettingsSwitcher():
+    def __init__(self, settings_vals):
+	self.settings_vals = settings_vals
+	self.token = random_token()
+
+    def before(self):
+        from django.conf import settings
+
+	for key, value in self.settings_vals.items():
+	    setattr(settings, key, value % {'token': self.token})
+
+    def after(self):
+        pass
 
 # Next 3 plugins taken from django-sane-testing: http://github.com/Almad/django-sane-testing
 # By: Lukas "Almad" Linhart http://almad.net/
