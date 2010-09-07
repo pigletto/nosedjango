@@ -379,17 +379,21 @@ def custom_before(use_testfs=True):
     setup_celery = SetupCeleryTesting()
     setup_cache = SetupCacheTesting()
     switched_settings = {
-        'DOCUMENT_BACKUP_STORAGE_DIR': 'unittest/document_backup/%(token)s/',
-        'DOCUMENT_BACKUP_STORAGE_BASE_URL': 'unittest/document_backup/%(token)s/',
-        'PRINTING_PDF_STORAGE_DIR': 'unittest/pdf_cache/%(token)s/',
-        'PRINTING_PDF_STORAGE_BASE_URL': 'unittest/pdf_cache/%(token)s/',
+        'DOCUMENT_BACKUP_STORAGE_DIR': 'unittest/document_backup%(token)s/',
+        'DOCUMENT_BACKUP_STORAGE_BASE_URL': 'unittest/document_backup%(token)s/',
         'DOCUMENT_IMPORT_STORAGE_DIR': 'document_import%(token)s',
         'DOCUMENT_SETTINGS_STORAGE_DIR': 'document_settings%(token)s',
+        'ATTACHMENT_STORAGE_PREFIX': 'attachments%(token)s',
     }
     settings_switcher = SetupSettingsSwitcher(switched_settings)
 
     from django.conf import settings
     settings.DOCUMENT_PRINTING_CACHE_ON_SAVE = False
+
+    from pstat.printing.conf import settings as print_settings
+    token = random_token()
+    print_settings.PDF_STORAGE_DIR = 'unittest/pdf_cache%s/' % token
+    print_settings.PDF_STORAGE_BASE_URL = 'unittest/pdf_cache%s/' % token
 
     settings_switcher.before()
     if use_testfs:
