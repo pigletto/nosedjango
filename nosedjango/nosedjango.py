@@ -383,6 +383,8 @@ def custom_before(use_testfs=True):
         'DOCUMENT_BACKUP_STORAGE_BASE_URL': 'unittest/document_backup/%(token)s/',
         'PRINTING_PDF_STORAGE_DIR': 'unittest/pdf_cache/%(token)s/',
         'PRINTING_PDF_STORAGE_BASE_URL': 'unittest/pdf_cache/%(token)s/',
+        'DOCUMENT_IMPORT_STORAGE_DIR': 'document_import%(token)s',
+        'DOCUMENT_SETTINGS_STORAGE_DIR': 'document_settings%(token)s',
     }
     settings_switcher = SetupSettingsSwitcher(switched_settings)
 
