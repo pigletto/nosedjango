@@ -568,7 +568,7 @@ class SeleniumPlugin(Plugin):
             self.ss_dir = os.path.abspath('failure_screenshots')
 
         self.x_display_counter = 1
-	self.x_display_offset = 1
+        self.x_display_offset = 1
         self.run_headless = False
         if options.headless:
             self.run_headless = True
@@ -579,7 +579,7 @@ class SeleniumPlugin(Plugin):
     def beforeTest(self, test):
         self.xvfb_process = None
         if getattr(test.context, 'selenium', False) and self.run_headless:
-	    xvfb_display = (self.x_display_counter % 2) + self.x_display_offset
+            xvfb_display = (self.x_display_counter % 2) + self.x_display_offset
             try:
                 self.xvfb_process = subprocess.Popen(['xvfb', ':%s' % xvfb_display, '-ac', '-screen', '0', '1024x768x24'], stderr=subprocess.PIPE)
             except OSError:
@@ -591,11 +591,18 @@ class SeleniumPlugin(Plugin):
     def afterTest(self, test):
         if getattr(test.context, 'selenium', False):
             driver_attr = getattr(test.context, 'selenium_driver_attr', 'driver')
-	    try:
-		driver = getattr(test.test, driver_attr)
-		driver.quit()
-	    except:
-		print >> sys.stderr, "Error stopping selenium driver"
+            try:
+                driver = getattr(test.test, driver_attr)
+                driver.quit()
+            except:
+                print >> sys.stderr, "Error stopping selenium driver"
+                time.sleep(1)
+                try:
+                    driver = getattr(test.test, driver_attr)
+                    driver.quit()
+                    print >> sys.stderr, "Error closing browser"
+                except OSError:
+                    pass
         if self.xvfb_process:
             os.kill(self.xvfb_process.pid, 9)
             os.waitpid(self.xvfb_process.pid, 0)
