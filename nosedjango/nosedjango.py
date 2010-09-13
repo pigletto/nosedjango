@@ -752,8 +752,6 @@ class DjangoSphinxPlugin(Plugin):
         wait_time = 0.5
         while not connected or num_tries >= max_tries:
             time.sleep(wait_time)
-                # Timed out
-                break
             try:
                 af = socket.AF_INET
                 addr = ('127.0.0.1', port)
