@@ -750,24 +750,22 @@ class DjangoSphinxPlugin(Plugin):
         max_tries = 10
         num_tries = 0
         wait_time = 0.5
-        while not connected:
+        while not connected or num_tries >= max_tries:
             time.sleep(wait_time)
-            if max_tries == num_tries:
                 # Timed out
                 break
             try:
                 af = socket.AF_INET
-                addr = ( '127.0.0.1', port )
+                addr = ('127.0.0.1', port)
                 desc = '%s;%s' % addr
-                sock = socket.socket ( af, socket.SOCK_STREAM )
-                sock.connect ( addr )
+                sock = socket.socket (af, socket.SOCK_STREAM)
+                sock.connect (addr)
             except socket.error, msg:
                 if sock:
                     sock.close()
                 num_tries += 1
                 continue
             connected = True
-            break
 
         if not connected:
             print >> sys.stderr, "Error connecting to sphinx searchd"
