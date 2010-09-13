@@ -743,31 +743,34 @@ class DjangoSphinxPlugin(Plugin):
 	self._wait_for_connection(self.searchd_port)
 
     def _wait_for_connection(self, port):
-	"""
-	Wait until we can make a socket connection to sphinx.
-	"""
-	connected = False
-	timed_out = False
-	max_tries = 10
-	num_tries = 0
-	wait_time = 0.5
-	while not connected and not timed_out:
-	    time.sleep(wait_time)
-	    try:
-		af = socket.AF_INET
-		addr = ( '127.0.0.1', port )
-		desc = '%s;%s' % addr
-		sock = socket.socket ( af, socket.SOCK_STREAM )
-		sock.connect ( addr )
-	    except socket.error, msg:
-		if sock:
-		    sock.close()
-		num_tries += 1
-		continue
-	    connected = True
+        """
+        Wait until we can make a socket connection to sphinx.
+        """
+        connected = False
+        max_tries = 10
+        num_tries = 0
+        wait_time = 0.5
+        while not connected:
+            time.sleep(wait_time)
+            if max_tries == num_tries:
+                # Timed out
+                break
+            try:
+                af = socket.AF_INET
+                addr = ( '127.0.0.1', port )
+                desc = '%s;%s' % addr
+                sock = socket.socket ( af, socket.SOCK_STREAM )
+                sock.connect ( addr )
+            except socket.error, msg:
+                if sock:
+                    sock.close()
+                num_tries += 1
+                continue
+            connected = True
+            break
 
-	if timed_out:
-	    print >> sys.stderr, "Error connecting to sphinx searchd"
+        if not connected:
+            print >> sys.stderr, "Error connecting to sphinx searchd"
 
     def _stop_searchd(self):
         try:
