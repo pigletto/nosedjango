@@ -668,7 +668,8 @@ class DjangoSphinxPlugin(Plugin):
 
     def startTest(self, test):
         from django.conf import settings
-        if settings.DATABASE_ENGINE == 'mysql':
+	from django.db import connection
+        if 'mysql' in connection.settings_dict['ENGINE']:
             # Using startTest instead of beforeTest so that we can be sure that
             # the fixtures were already loaded with nosedjango's beforeTest
             build_sphinx_index = getattr(test, 'build_sphinx_index', False)
@@ -685,11 +686,12 @@ class DjangoSphinxPlugin(Plugin):
                 # Generate the sphinx configuration file from the template
                 sphinx_config_path = os.path.join(self.tmp_sphinx_dir, 'sphinx.conf')
 
+		db_dict = connection.settings_dict
                 with open(self.sphinx_config_tpl, 'r') as tpl_f:
                     context = {
-                        'database_name': settings.DATABASE_NAME,
-                        'database_username': settings.DATABASE_USER,
-                        'database_password': settings.DATABASE_PASSWORD,
+                        'database_name': db_dict['NAME'],
+                        'database_username': db_dict['USER'],
+                        'database_password': db_dict['PASSWORD'],
                         'sphinx_search_data_dir': self.tmp_sphinx_dir,
                         'searchd_log_dir': self.tmp_sphinx_dir,
                     }
@@ -707,8 +709,8 @@ class DjangoSphinxPlugin(Plugin):
                 self._start_searchd(sphinx_config_path)
 
     def afterTest(self, test):
-        from django.conf import settings
-        if settings.DATABASE_ENGINE == 'mysql':
+	from django.db import connection
+        if 'mysql' in connection.settings_dict['ENGINE']:
             if getattr(test.context, 'run_sphinx_searchd', False):
                 self._stop_searchd()
 
