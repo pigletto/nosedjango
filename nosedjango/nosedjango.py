@@ -469,6 +469,9 @@ class SetupCacheTesting():
         settings.CACHE_BACKEND = 'locmem://'
         settings.DISABLE_QUERYSET_CACHE = True
 
+	from django.core.cache import cache
+	cache.clear()
+
     def after(self):
         pass
 
