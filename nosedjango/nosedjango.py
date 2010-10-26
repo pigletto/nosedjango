@@ -12,6 +12,9 @@ import subprocess
 import signal
 import tempfile
 import math, string, random
+import socket
+import time
+
 from time import sleep
 
 from nose.plugins import Plugin
@@ -42,7 +45,7 @@ def get_settings_path(settings_module):
     cwd = os.getcwd()
     settings_filename = '%s.py' % (
         settings_module.split('.')[-1]
-        )
+    )
     while cwd:
         if settings_filename in os.listdir(cwd):
             break
@@ -120,12 +123,13 @@ class NoseDjango(Plugin):
             self.settings_module = 'settings'
 
         self._use_sqlite = options.use_sqlite
-	self._use_testfs = options.use_testfs
+        self._use_testfs = options.use_testfs
 
         super(NoseDjango, self).configure(options, conf)
 
     def begin(self):
-        """Create the test database and schema, if needed, and switch the
+        """
+        Create the test database and schema, if needed, and switch the
         connection over to that database. Then call install() to install
         all apps listed in the loaded settings module.
         """
@@ -225,6 +229,11 @@ class NoseDjango(Plugin):
             return True
         return False
 
+    def _should_rebuild_schema(self, test):
+        if getattr(test.context, 'rebuild_schema', False):
+            return True
+        return False
+
     def afterTest(self, test):
         """
         Clean up any changes to the test database.
@@ -234,7 +243,17 @@ class NoseDjango(Plugin):
         from django.contrib.contenttypes.models import ContentType
         from django.db import connection, transaction
         from django.core.management import call_command
+        from django.test.utils import setup_test_environment, teardown_test_environment
         from django import VERSION as DJANGO_VERSION
+
+        if self._should_rebuild_schema(test):
+            connection.creation.destroy_test_db(
+                self.old_db, verbosity=self.verbosity)
+            teardown_test_environment()
+
+            setup_test_environment()
+            connection.creation.create_test_db(verbosity=self.verbosity)
+            return
 
         use_transaction_isolation = self._should_use_transaction_isolation(
             test, settings)
@@ -310,8 +329,8 @@ class NoseDjango(Plugin):
             # short circuit if no settings file can be found
             return
 
-	from django.contrib.sites.models import Site
-	from django.contrib.contenttypes.models import ContentType
+        from django.contrib.sites.models import Site
+        from django.contrib.contenttypes.models import ContentType
         from django.core.management import call_command
         from django.core.urlresolvers import clear_url_caches
         from django.conf import settings
@@ -327,8 +346,8 @@ class NoseDjango(Plugin):
             transaction.managed(True)
             self.disable_transaction_support(transaction)
 
-	Site.objects.clear_cache()
-	ContentType.objects.clear_cache() # Otherwise django.contrib.auth.Permissions will depend on deleted ContentTypes
+        Site.objects.clear_cache()
+        ContentType.objects.clear_cache() # Otherwise django.contrib.auth.Permissions will depend on deleted ContentTypes
 
         if isinstance(test, nose.case.Test) \
            and not using_django_testcase_management:
@@ -345,11 +364,11 @@ class NoseDjango(Plugin):
         if isinstance(test, nose.case.Test) and \
            not using_django_testcase_management \
            and hasattr(test.context, 'urls'):
-                # We have to use this slightly awkward syntax due to the fact
-                # that we're using *args and **kwargs together.
-                self.old_urlconf = settings.ROOT_URLCONF
-                settings.ROOT_URLCONF = self.urls
-                clear_url_caches()
+            # We have to use this slightly awkward syntax due to the fact
+            # that we're using *args and **kwargs together.
+            self.old_urlconf = settings.ROOT_URLCONF
+            settings.ROOT_URLCONF = self.urls
+            clear_url_caches()
 
     def finalize(self, result=None):
         """
@@ -375,7 +394,7 @@ class NoseDjango(Plugin):
 
 def custom_before(use_testfs=True):
     if use_testfs:
-	setup_fs = SetupTestFilesystem()
+        setup_fs = SetupTestFilesystem()
     setup_celery = SetupCeleryTesting()
     setup_cache = SetupCacheTesting()
     switched_settings = {
@@ -398,18 +417,18 @@ def custom_before(use_testfs=True):
 
     settings_switcher.before()
     if use_testfs:
-	setup_fs.before()
+        setup_fs.before()
     setup_celery.before()
     setup_cache.before()
 
 def custom_after(use_testfs=True):
     if use_testfs:
-	setup_fs = SetupTestFilesystem()
+        setup_fs = SetupTestFilesystem()
     setup_celery = SetupCeleryTesting()
     setup_cache = SetupCacheTesting()
 
     if use_testfs:
-	setup_fs.after()
+        setup_fs.after()
     setup_celery.after()
     setup_cache.after()
 
@@ -424,16 +443,16 @@ def random_token(bits=128):
     return ''.join(random.choice(alphabet) for i in range(num_letters))
 
 class TestFileSystemStorage(FileSystemStorage):
-        """
-        Filesystem storage that puts files in a special test folder that can
-        be deleted before and after tests.
-        """
-        def __init__(self, location=None, base_url=None, *args, **kwargs):
-            from django.conf import settings
-            token = random_token()
-            location = os.path.join(settings.MEDIA_ROOT, token)
-            base_url = os.path.join(settings.MEDIA_URL, '%s/' % token)
-            return super(TestFileSystemStorage, self).__init__(location, base_url, *args, **kwargs)
+    """
+    Filesystem storage that puts files in a special test folder that can
+    be deleted before and after tests.
+    """
+    def __init__(self, location=None, base_url=None, *args, **kwargs):
+        from django.conf import settings
+        token = random_token()
+        location = os.path.join(settings.MEDIA_ROOT, token)
+        base_url = os.path.join(settings.MEDIA_URL, '%s/' % token)
+        return super(TestFileSystemStorage, self).__init__(location, base_url, *args, **kwargs)
 
 class SetupTestFilesystem():
     """
@@ -469,27 +488,27 @@ class SetupCacheTesting():
         settings.CACHE_BACKEND = 'locmem://'
         settings.DISABLE_QUERYSET_CACHE = True
 
-	from django.core.cache import cache
-	cache.clear()
+        from django.core.cache import cache
+        cache.clear()
 
     def after(self):
         pass
 
 class SetupSettingsSwitcher():
     def __init__(self, settings_vals):
-	self.settings_vals = settings_vals
-	self.token = random_token()
+        self.settings_vals = settings_vals
+        self.token = random_token()
 
     def before(self):
         from django.conf import settings
 
-	for key, value in self.settings_vals.items():
-	    setattr(settings, key, value % {'token': self.token})
+        for key, value in self.settings_vals.items():
+            setattr(settings, key, value % {'token': self.token})
 
     def after(self):
         pass
 
-# Next 3 plugins taken from django-sane-testing: http://github.com/Almad/django-sane-testing
+# Next 3 plugins derived from django-sane-testing: http://github.com/Almad/django-sane-testing
 # By: Lukas "Almad" Linhart http://almad.net/
 #####
 ### It was a nice try with Django server being threaded.
@@ -636,9 +655,6 @@ class SeleniumPlugin(Plugin):
 
         driver.save_screenshot(ss_file)
 
-import socket
-import time
-
 class DjangoSphinxPlugin(Plugin):
     name = 'djangosphinx'
 
@@ -671,7 +687,7 @@ class DjangoSphinxPlugin(Plugin):
 
     def startTest(self, test):
         from django.conf import settings
-	from django.db import connection
+        from django.db import connection
         if 'mysql' in connection.settings_dict['ENGINE']:
             # Using startTest instead of beforeTest so that we can be sure that
             # the fixtures were already loaded with nosedjango's beforeTest
@@ -689,7 +705,7 @@ class DjangoSphinxPlugin(Plugin):
                 # Generate the sphinx configuration file from the template
                 sphinx_config_path = os.path.join(self.tmp_sphinx_dir, 'sphinx.conf')
 
-		db_dict = connection.settings_dict
+                db_dict = connection.settings_dict
                 with open(self.sphinx_config_tpl, 'r') as tpl_f:
                     context = {
                         'database_name': db_dict['NAME'],
@@ -712,7 +728,7 @@ class DjangoSphinxPlugin(Plugin):
                 self._start_searchd(sphinx_config_path)
 
     def afterTest(self, test):
-	from django.db import connection
+        from django.db import connection
         if 'mysql' in connection.settings_dict['ENGINE']:
             if getattr(test.context, 'run_sphinx_searchd', False):
                 self._stop_searchd()
@@ -723,7 +739,7 @@ class DjangoSphinxPlugin(Plugin):
 
     def _build_sphinx_index(self, config):
         indexer = subprocess.Popen(['indexer', '--config', config, '--all'],
-                        stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         if indexer.wait() != 0:
             print "Sphinx Indexing Problem"
             stdout, stderr = indexer.communicate()
@@ -743,7 +759,7 @@ class DjangoSphinxPlugin(Plugin):
             print "stdout: %s" % stdout
             print "stderr: %s" % stderr
 
-	self._wait_for_connection(self.searchd_port)
+        self._wait_for_connection(self.searchd_port)
 
     def _wait_for_connection(self, port):
         """

@@ -33,6 +33,7 @@ class FixtureBleed2TestCase(TestCase):
 
 class AltersBleed1TestCase(TestCase):
     fixtures = ['polls1.json']
+    rebuild_schema = True
 
     def test_db_alteration(self):
         if settings.DATABASE_ENGINE == 'mysql':
