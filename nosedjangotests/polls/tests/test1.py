@@ -40,7 +40,48 @@ def _test_permissions(self):
                 codename=codename, content_type=content_type).count()
             self.assertEqual(num_perms, 1)
 
+def _test_fixtures_1(self):
+    num_polls = Poll.objects.all().count()
+    self.assertEqual(num_polls, 1)
+
+    bear_poll = Poll.objects.get(pk=1)
+    self.assertEqual(bear_poll.question, 'What bear is best?')
+
+    new_poll = Poll.objects.create(
+        question="Did my shoes come off in the plane crash?",
+        pub_date=datetime.datetime.now())
+    new_poll.save()
+
+def _test_fixtures_2(self):
+    num_polls = Poll.objects.all().count()
+    self.assertEqual(num_polls, 1)
+
+    wood_poll = Poll.objects.get(pk=2)
+    self.assertEqual(wood_poll.question, 'Is there fire wood on the island?')
+
+    new_poll = Poll.objects.create(
+        question="Did my shoes come off in the plane crash?",
+        pub_date=datetime.datetime.now())
+    new_poll.save()
+
+def _test_multiple_fixtures(self):
+    num_polls = Poll.objects.all().count()
+    self.assertEqual(num_polls, 2)
+
+    wood_poll = Poll.objects.get(pk=2)
+    self.assertEqual(wood_poll.question, 'Is there fire wood on the island?')
+
+    bear_poll = Poll.objects.get(pk=1)
+    self.assertEqual(bear_poll.question, 'What bear is best?')
+
+    new_poll = Poll.objects.create(
+        question="Did my shoes come off in the plane crash?",
+        pub_date=datetime.datetime.now())
+    new_poll.save()
+
+
 class DjangoTestCase(TestCase):
+    fixtures = ['polls1.json']
 
     def test_a_skip(self):
         raise SkipTest('Skipping')
@@ -62,8 +103,26 @@ class DjangoTestCase(TestCase):
 
     def test_permissions_2(self):
         _test_permissions(self)
+
+    def test_fixtures_1(self):
+        _test_fixtures_1(self)
+
+    def test_fixtures_2(self):
+        _test_fixtures_1(self)
+
+
+class DjangoTestCase2(DjangoTestCase):
+    fixtures = ['polls2.json']
+
+    def test_fixtures_1(self):
+        _test_fixtures_2(self)
+
+    def test_fixtures_2(self):
+        _test_fixtures_2(self)
+
 
 class DjangoTransactionTestCase(TestCase):
+    fixtures = ['polls1.json']
 
     def test_a_skip(self):
         raise SkipTest('Skipping')
@@ -85,8 +144,26 @@ class DjangoTransactionTestCase(TestCase):
 
     def test_permissions_2(self):
         _test_permissions(self)
+
+    def test_fixtures_1(self):
+        _test_fixtures_1(self)
+
+    def test_fixtures_2(self):
+        _test_fixtures_1(self)
+
+
+class DjangoTransactionTestCase2(DjangoTransactionTestCase):
+    fixtures = ['polls2.json']
+
+    def test_fixtures_1(self):
+        _test_fixtures_2(self)
+
+    def test_fixtures_2(self):
+        _test_fixtures_2(self)
+
 
 class WithTransactionUnitTestCase(UnitTestCase):
+    fixtures = ['polls1.json']
 
     def test_a_skip(self):
         raise SkipTest('Skipping')
@@ -109,7 +186,25 @@ class WithTransactionUnitTestCase(UnitTestCase):
     def test_permissions_2(self):
         _test_permissions(self)
 
+    def test_fixtures_1(self):
+        _test_fixtures_1(self)
+
+    def test_fixtures_2(self):
+        _test_fixtures_1(self)
+
+
+class WithTransactionUnitTestCase2(WithTransactionUnitTestCase):
+    fixtures = ['polls2.json']
+
+    def test_fixtures_1(self):
+        _test_fixtures_2(self)
+
+    def test_fixtures_2(self):
+        _test_fixtures_2(self)
+
+
 class NoTransactionUnitTestCase(UnitTestCase):
+    fixtures = ['polls1.json']
     use_transaction_isolation = False
 
     def test_a_skip(self):
@@ -133,3 +228,46 @@ class NoTransactionUnitTestCase(UnitTestCase):
     def test_permissions_2(self):
         _test_permissions(self)
 
+    def test_fixtures_1(self):
+        _test_fixtures_1(self)
+
+    def test_fixtures_2(self):
+        _test_fixtures_1(self)
+
+
+class NoTransactionUnitTestCase2(NoTransactionUnitTestCase):
+    fixtures = ['polls2.json']
+
+    def test_fixtures_1(self):
+        _test_fixtures_2(self)
+
+    def test_fixtures_2(self):
+        _test_fixtures_2(self)
+
+
+class MultipleFixtureTestCase(UnitTestCase):
+    fixtures = ['polls1.json', 'polls2.json']
+
+    def test_a_skip(self):
+        raise SkipTest('Skipping')
+
+    def test_using_content_types_1(self):
+        _test_using_content_types(self)
+
+    def test_get_contenttypes_1(self):
+        _test_get_contenttypes(self)
+
+    def test_permissions_1(self):
+        _test_permissions(self)
+
+    def test_using_content_types_2(self):
+        _test_using_content_types(self)
+
+    def test_get_contenttypes_2(self):
+        _test_get_contenttypes(self)
+
+    def test_permissions_2(self):
+        _test_permissions(self)
+
+    def test_multiple_fixtures(self):
+        _test_multiple_fixtures(self)

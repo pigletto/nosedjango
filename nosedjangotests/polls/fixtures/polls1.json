@@ -1,0 +1,10 @@
+[
+    {
+        "pk": 1,
+        "model": "polls.poll",
+        "fields": {
+            "question": "What bear is best?",
+      	    "pub_date": "2007-07-15 00:00:00"
+        }
+    }
+]

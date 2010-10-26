@@ -22,14 +22,39 @@ class RunTests(Command):
             print 'nose and nosedjango are required to run this test suite'
             sys.exit(1)
 
+        print "Running tests with sqlite"
         args = [
             '-v',
             '--with-doctest',
             '--with-django',
             '--django-settings', 'nosedjangotests.settings',
+            '--django-sqlite',
             'nosedjangotests.polls',
         ]
-        TestProgram(argv=args)
+        TestProgram(argv=args, exit=False)
+
+        print "Running tests multiprocess"
+        args = [
+            '-v',
+            '--with-doctest',
+            '--processes', '3',
+            '--with-django',
+            '--django-settings', 'nosedjangotests.settings',
+            '--django-sqlite',
+            'nosedjangotests.polls',
+        ]
+        TestProgram(argv=args, exit=False)
+
+        print "Running tests with mysql. (will fail if mysql not configured)"
+        args = [
+            '-v',
+            '--with-id',
+            '--with-doctest',
+            '--with-django',
+            '--django-settings', 'nosedjangotests.settings',
+            'nosedjangotests.polls',
+        ]
+        TestProgram(argv=args, exit=False)
 
         os.chdir(setup_dir)
 

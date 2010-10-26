@@ -7,16 +7,12 @@ ADMINS = (
 
 MANAGERS = ADMINS
 
-DATABASE_ENGINE = 'sqlite3'
-DATABASE_NAME = ':memory'
-DATABASE_USER = ''
+DATABASE_ENGINE = 'mysql'
+DATABASE_NAME = 'nosedjango'
+DATABASE_USER = 'root'
 DATABASE_PASSWORD = ''
 DATABASE_HOST = ''
 DATABASE_PORT = ''
-
-#DATABASE_ENGINE = 'mysql'
-#DATABASE_NAME = 'nosedjango'
-#DATABASE_USER = 'root'
 
 TIME_ZONE = 'America/Chicago'
 LANGUAGE_CODE = 'en-us'
