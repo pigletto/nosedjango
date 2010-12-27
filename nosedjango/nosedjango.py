@@ -452,6 +452,7 @@ class TestFileSystemStorage(FileSystemStorage):
         token = random_token()
         location = os.path.join(settings.MEDIA_ROOT, token)
         base_url = os.path.join(settings.MEDIA_URL, '%s/' % token)
+
         return super(TestFileSystemStorage, self).__init__(location, base_url, *args, **kwargs)
 
 class SetupTestFilesystem():
@@ -467,9 +468,9 @@ class SetupTestFilesystem():
         self.clear_test_media()
 
     def clear_test_media(self):
-        tfs = TestFileSystemStorage()
+        from django.core.files.storage import default_storage
         try:
-            shutil.rmtree(tfs.location)
+            shutil.rmtree(default_storage.location)
         except OSError:
             pass
 
