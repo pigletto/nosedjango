@@ -40,6 +40,7 @@ class SphinxPlugin(Plugin):
 
     def startTest(self, test):
         from django.conf import settings
+        from django.db import connection
         if settings.DATABASE_ENGINE == 'mysql':
             # Using startTest instead of beforeTest so that we can be sure that
             # the fixtures were already loaded with nosedjango's beforeTest
@@ -57,11 +58,12 @@ class SphinxPlugin(Plugin):
                 # Generate the sphinx configuration file from the template
                 sphinx_config_path = os.path.join(self.tmp_sphinx_dir, 'sphinx.conf')
 
+                db_dict = connection.settings_dict
                 with open(self.sphinx_config_tpl, 'r') as tpl_f:
                     context = {
-                        'database_name': settings.DATABASE_NAME,
-                        'database_username': settings.DATABASE_USER,
-                        'database_password': settings.DATABASE_PASSWORD,
+                        'database_name': db_dict['NAME'],
+                        'database_username': db_dict['USER'],
+                        'database_password': db_dict['PASSWORD'],
                         'sphinx_search_data_dir': self.tmp_sphinx_dir,
                         'searchd_log_dir': self.tmp_sphinx_dir,
                     }
@@ -79,8 +81,8 @@ class SphinxPlugin(Plugin):
                 self._start_searchd(sphinx_config_path)
 
     def afterTest(self, test):
-        from django.conf import settings
-        if settings.DATABASE_ENGINE == 'mysql':
+        from django.db import connection
+        if 'mysql' in connection.settings_dict['ENGINE']:
             if getattr(test.context, 'run_sphinx_searchd', False):
                 self._stop_searchd()
 
@@ -110,7 +112,38 @@ class SphinxPlugin(Plugin):
             print "stdout: %s" % stdout
             print "stderr: %s" % stderr
 
+        self._wait_for_connection(self.searchd_port)
+
+    def _wait_for_connection(self, port):
+        """
+        Wait until we can make a socket connection to sphinx.
+        """
+        connected = False
+        max_tries = 10
+        num_tries = 0
+        wait_time = 0.5
+        while not connected or num_tries >= max_tries:
+            time.sleep(wait_time)
+            try:
+                af = socket.AF_INET
+                addr = ('127.0.0.1', port)
+                desc = '%s;%s' % addr
+                sock = socket.socket (af, socket.SOCK_STREAM)
+                sock.connect (addr)
+            except socket.error, msg:
+                if sock:
+                    sock.close()
+                num_tries += 1
+                continue
+            connected = True
+
+        if not connected:
+            print >> sys.stderr, "Error connecting to sphinx searchd"
+
     def _stop_searchd(self):
-        if not self._searchd.poll():
-            os.kill(self._searchd.pid, signal.SIGKILL)
-            self._searchd.wait()
+        try:
+            if not self._searchd.poll():
+                os.kill(self._searchd.pid, signal.SIGKILL)
+                self._searchd.wait()
+        except AttributeError:
+            print sys.stderr, "Error stoping sphinx search daemon"

@@ -1,5 +1,8 @@
-import string, math, random, shutil
+import math
+import random
 import os.path
+import shutil
+import string
 
 from django.core.files.storage import FileSystemStorage
 

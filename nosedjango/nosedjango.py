@@ -12,6 +12,9 @@ import subprocess
 import signal
 import tempfile
 import math, string, random
+import socket
+import time
+
 from time import sleep
 
 from nose.plugins import Plugin
@@ -38,7 +41,7 @@ def get_settings_path(settings_module):
     cwd = os.getcwd()
     settings_filename = '%s.py' % (
         settings_module.split('.')[-1]
-        )
+    )
     while cwd:
         if settings_filename in os.listdir(cwd):
             break
@@ -104,6 +107,11 @@ class NoseDjango(Plugin):
                           dest='use_sqlite', action="store_true",
                           default=False
                           )
+        parser.add_option('--django-testfs',
+                          help='Use a local isolated test filestyem',
+                          dest='use_testfs', action="store_true",
+                          default=False
+                          )
         super(NoseDjango, self).options(parser, env)
 
     def configure(self, options, conf):
@@ -116,6 +124,7 @@ class NoseDjango(Plugin):
             self.settings_module = 'settings'
 
         self._use_sqlite = options.use_sqlite
+        self._use_testfs = options.use_testfs
 
         super(NoseDjango, self).configure(options, conf)
 
@@ -127,7 +136,8 @@ class NoseDjango(Plugin):
                 getattr(plugin, meth_name)(*args, **kwargs)
 
     def begin(self):
-        """Create the test database and schema, if needed, and switch the
+        """
+        Create the test database and schema, if needed, and switch the
         connection over to that database. Then call install() to install
         all apps listed in the loaded settings module.
         """
@@ -171,7 +181,7 @@ class NoseDjango(Plugin):
             settings.DATABASE_PASSWORD = ''
 
         # Do our custom testrunner stuff
-        custom_before()
+        custom_before(use_testfs=self._use_testfs)
 
         # Some Django code paths evaluate differently
         # between DEBUG and not DEBUG.  Example of this include the url
@@ -221,13 +231,25 @@ class NoseDjango(Plugin):
                 # The DB doesn't support transactions. Don't try it
                 return False
 
-        # If we're a subclass of TransactionTestCase, then either we shouldn't
-        # manage transactions because the test needs to handle it or we can
-        # use a transaction but Django's testcase will handle it themselves
-        if isinstance(test.test, TransactionTestCase):
-            return False
-
         return True
+
+    def _should_use_django_testcase_management(self, test):
+        """
+        Should we let Django's custom testcase classes handle the setup/teardown
+        operations for transaction rollback, fixture loading and urlconf loading.
+        """
+        from django.test import TransactionTestCase
+
+        # If we're a subclass of TransactionTestCase, then the testcase will
+        # handle any transaction setup, fixtures, or urlconfs
+        if isinstance(test.test, TransactionTestCase):
+            return True
+        return False
+
+    def _should_rebuild_schema(self, test):
+        if getattr(test.context, 'rebuild_schema', False):
+            return True
+        return False
 
     def afterTest(self, test):
         """
@@ -235,10 +257,27 @@ class NoseDjango(Plugin):
         """
         # Restore transaction support on tests
         from django.conf import settings
+        from django.contrib.contenttypes.models import ContentType
         from django.db import connection, transaction
+        from django.core.management import call_command
+        from django.test.utils import setup_test_environment, teardown_test_environment
+        from django import VERSION as DJANGO_VERSION
 
-        # beforeRollback(settings, connection, transaction)
-        if self._should_use_transaction_isolation(test, settings):
+        if self._should_rebuild_schema(test):
+            connection.creation.destroy_test_db(
+                self.old_db, verbosity=self.verbosity)
+            teardown_test_environment()
+
+            setup_test_environment()
+            connection.creation.create_test_db(verbosity=self.verbosity)
+            return
+
+        use_transaction_isolation = self._should_use_transaction_isolation(
+            test, settings)
+        using_django_testcase_management = self._should_use_django_testcase_management(test)
+
+        if use_transaction_isolation \
+           and not using_django_testcase_management:
             self.restore_transaction_support(transaction)
             transaction.rollback()
             if transaction.is_managed():
@@ -246,6 +285,57 @@ class NoseDjango(Plugin):
             # If connection is not closed Postgres can go wild with
             # character encodings.
             connection.close()
+        elif not use_transaction_isolation:
+            # Have to clear the db even if we're using django because django
+            # doesn't properly flush the database after a test. It relies on
+            # flushing before a test, so we want to avoid the case where a django
+            # test doesn't flush and then a normal test runs, because it will
+            # expect the db to already be flushed
+            ContentType.objects.clear_cache() # Otherwise django.contrib.auth.Permissions will depend on deleted ContentTypes
+            call_command('flush', verbosity=0, interactive=False)
+
+            # In Django <1.2 Depending on the order of certain post-syncdb
+            # signals, ContentTypes can be removed accidentally. Manually delete and re-add all
+            # and recreate ContentTypes if we're using the contenttypes app
+            # See: http://code.djangoproject.com/ticket/9207
+            # See: http://code.djangoproject.com/ticket/7052
+            if DJANGO_VERSION[0] <= 1 and DJANGO_VERSION[1] < 2 \
+               and 'django.contrib.contenttypes' in settings.INSTALLED_APPS:
+                from django.contrib.contenttypes.models import ContentType
+                from django.contrib.contenttypes.management import update_all_contenttypes
+                from django.db import models
+                from django.contrib.auth.management import create_permissions
+                from django.contrib.auth.models import Permission
+
+                ContentType.objects.all().delete()
+                ContentType.objects.clear_cache()
+                update_all_contenttypes(verbosity=0)
+
+                # Because of various ways of handling auto-increment, we need to
+                # make sure the new contenttypes start at 1
+                next_pk = 1
+                content_types = list(ContentType.objects.all().order_by('pk'))
+                ContentType.objects.all().delete()
+                for ct in content_types:
+                    ct.pk = next_pk
+                    ct.save()
+                    next_pk += 1
+
+                # Because of the same problems with ContentTypes, we can get
+                # busted permissions
+                Permission.objects.all().delete()
+                for app in models.get_apps():
+                    create_permissions(app=app, created_models=None, verbosity=0)
+
+                # Because of various ways of handling auto-increment, we need to
+                # make sure the new permissions start at 1
+                next_pk = 1
+                permissions = list(Permission.objects.all().order_by('pk'))
+                Permission.objects.all().delete()
+                for perm in permissions:
+                    perm.pk = next_pk
+                    perm.save()
+                    next_pk += 1
 
         self.call_plugins_method('afterRollback', settings)
 
@@ -258,46 +348,53 @@ class NoseDjango(Plugin):
             # short circuit if no settings file can be found
             return
 
+        from django.contrib.sites.models import Site
+        from django.contrib.contenttypes.models import ContentType
         from django.core.management import call_command
         from django.core.urlresolvers import clear_url_caches
         from django.conf import settings
         from django.db import connection, transaction
         from django.test import TransactionTestCase
 
-        use_transaction_isolation = self._should_use_transaction_isolation(test, settings)
+        use_transaction_isolation = self._should_use_transaction_isolation(
+            test, settings)
+        using_django_testcase_management = self._should_use_django_testcase_management(test)
 
-        if use_transaction_isolation:
+        if use_transaction_isolation and not using_django_testcase_management:
             self.call_plugins_method('beforeTransactionManagement', settings, test)
-
             transaction.enter_transaction_management()
             transaction.managed(True)
             self.disable_transaction_support(transaction)
 
-            from django.contrib.sites.models import Site
-            Site.objects.clear_cache()
+        Site.objects.clear_cache()
+        ContentType.objects.clear_cache() # Otherwise django.contrib.auth.Permissions will depend on deleted ContentTypes
 
+        if use_transaction_isolation and not using_django_testcase_management:
             self.call_plugins_method('afterTransactionManagement', settings, test)
 
         self.call_plugins_method('beforeFixtureLoad', settings, test)
-        if isinstance(test, nose.case.Test) and \
-           not isinstance(test.test, TransactionTestCase):
+        if isinstance(test, nose.case.Test) \
+           and not using_django_testcase_management:
             # Mirrors django.test.testcases:TestCase
-            call_command('flush', verbosity=0, interactive=False)
+
             if hasattr(test.context, 'fixtures'):
                 # We have to use this slightly awkward syntax due to the fact
                 # that we're using *args and **kwargs together.
-                call_command('loaddata', *test.context.fixtures, **{'verbosity': 0})
+                if use_transaction_isolation:
+                    call_command('loaddata', *test.context.fixtures, **{'verbosity': 0, 'commit': False})
+                else:
+                    call_command('loaddata', *test.context.fixtures, **{'verbosity': 0})
         self.call_plugins_method('afterFixtureLoad', settings, test)
 
         self.call_plugins_method('beforeUrlConfLoad', settings, test)
         if isinstance(test, nose.case.Test) and \
-           not isinstance(test.test, TransactionTestCase) and \
-            hasattr(test.context, 'urls'):
-                # We have to use this slightly awkward syntax due to the fact
-                # that we're using *args and **kwargs together.
-                self.old_urlconf = settings.ROOT_URLCONF
-                settings.ROOT_URLCONF = self.urls
-                clear_url_caches()
+           not using_django_testcase_management \
+           and hasattr(test.context, 'urls'):
+            # We have to use this slightly awkward syntax due to the fact
+            # that we're using *args and **kwargs together.
+            self.old_urlconf = settings.ROOT_URLCONF
+            settings.ROOT_URLCONF = self.urls
+            clear_url_caches()
         self.call_plugins_method('afterUrlConfLoad', settings, test)
 
     def finalize(self, result=None):
@@ -313,7 +410,7 @@ class NoseDjango(Plugin):
         from django.conf import settings
 
         # Clean up our custom testrunner stuff
-        custom_after()
+        custom_after(use_testfs=self._use_testfs)
 
         self.call_plugins_method('beforeDestroyTestDb', settings, connection)
         connection.creation.destroy_test_db(self.old_db, verbosity=self.verbosity)
@@ -328,23 +425,53 @@ class NoseDjango(Plugin):
             settings.ROOT_URLCONF = self.old_urlconf
             clear_url_caches()
 
-def custom_before():
+def custom_before(use_testfs=True):
     setup_celery = SetupCeleryTesting()
     setup_cache = SetupCacheTesting()
+    switched_settings = {
+        'DOCUMENT_IMPORT_STORAGE_DIR': 'document_import%(token)s',
+        'DOCUMENT_SETTINGS_STORAGE_DIR': 'document_settings%(token)s',
+        'ATTACHMENT_STORAGE_PREFIX': 'attachments%(token)s',
+    }
+    settings_switcher = SetupSettingsSwitcher(switched_settings)
 
     from django.conf import settings
     settings.DOCUMENT_PRINTING_CACHE_ON_SAVE = False
 
+    from pstat.printing.conf import settings as print_settings
+    from pstat.document_backup.conf import settings as backup_settings
+    token = random_token()
+    print_settings.PDF_STORAGE_DIR = 'unittest/pdf_cache%s/' % token
+    print_settings.PDF_STORAGE_BASE_URL = 'unittest/pdf_cache%s/' % token
+    backup_settings.STORAGE_DIR = 'unittest/document_backup%s/' % token
+    backup_settings.STORAGE_BASE_URL = 'unittest/document_backup%s/' % token
+
+    settings_switcher.before()
+    #if use_testfs:
+    #    setup_fs.before()
     setup_celery.before()
     setup_cache.before()
 
-def custom_after():
+def custom_after(use_testfs=True):
+    #if use_testfs:
+    #    setup_fs = SetupTestFilesystem()
     setup_celery = SetupCeleryTesting()
     setup_cache = SetupCacheTesting()
 
+    #if use_testfs:
+    #    setup_fs.after()
     setup_celery.after()
     setup_cache.after()
 
+def random_token(bits=128):
+    """
+    Generates a random token, using the url-safe base64 alphabet.
+    The "bits" argument specifies the bits of randomness to use.
+    """
+    alphabet = string.ascii_letters + string.digits + '-_'
+    # alphabet length is 64, so each letter provides lg(64) = 6 bits
+    num_letters = int(math.ceil(bits / 6.0))
+    return ''.join(random.choice(alphabet) for i in range(num_letters))
 
 class SetupCeleryTesting():
     def before(self):
@@ -360,10 +487,25 @@ class SetupCacheTesting():
         settings.CACHE_BACKEND = 'locmem://'
         settings.DISABLE_QUERYSET_CACHE = True
 
+        from django.core.cache import cache
+        cache.clear()
+
     def after(self):
         pass
 
+class SetupSettingsSwitcher():
+    def __init__(self, settings_vals):
+        self.settings_vals = settings_vals
+        self.token = random_token()
 
+    def before(self):
+        from django.conf import settings
+
+        for key, value in self.settings_vals.items():
+            setattr(settings, key, value % {'token': self.token})
+
+    def after(self):
+        pass
 
 class SeleniumPlugin(Plugin):
     name = 'selenium'
@@ -385,29 +527,41 @@ class SeleniumPlugin(Plugin):
             self.ss_dir = os.path.abspath('failure_screenshots')
 
         self.x_display_counter = 1
+        self.x_display_offset = 1
         self.run_headless = False
         if options.headless:
             self.run_headless = True
-            self.x_display_counter = int(options.headless)
+            self.x_display_offset = int(options.headless)
 
         Plugin.configure(self, options, config)
 
     def beforeTest(self, test):
         self.xvfb_process = None
         if getattr(test.context, 'selenium', False) and self.run_headless:
+            xvfb_display = (self.x_display_counter % 2) + self.x_display_offset
             try:
-                self.xvfb_process = subprocess.Popen(['xvfb', ':%s' % self.x_display_counter, '-ac', '-screen', '0', '1024x768x24'], stderr=subprocess.PIPE)
+                self.xvfb_process = subprocess.Popen(['xvfb', ':%s' % xvfb_display, '-ac', '-screen', '0', '1024x768x24'], stderr=subprocess.PIPE)
             except OSError:
                 # Newer distros use Xvfb
-                self.xvfb_process = subprocess.Popen(['Xvfb', ':%s' % self.x_display_counter, '-ac', '-screen', '0', '1024x768x24'], stderr=subprocess.PIPE)
-            os.environ['DISPLAY'] = ':%s' % self.x_display_counter
+                self.xvfb_process = subprocess.Popen(['Xvfb', ':%s' % xvfb_display, '-ac', '-screen', '0', '1024x768x24'], stderr=subprocess.PIPE)
+            os.environ['DISPLAY'] = ':%s' % xvfb_display
             self.x_display_counter += 1
 
     def afterTest(self, test):
         if getattr(test.context, 'selenium', False):
             driver_attr = getattr(test.context, 'selenium_driver_attr', 'driver')
-            driver = getattr(test.test, driver_attr)
-            driver.quit()
+            try:
+                driver = getattr(test.test, driver_attr)
+                driver.quit()
+            except:
+                print >> sys.stderr, "Error stopping selenium driver"
+                time.sleep(1)
+                try:
+                    driver = getattr(test.test, driver_attr)
+                    driver.quit()
+                    print >> sys.stderr, "Error closing browser"
+                except OSError:
+                    pass
         if self.xvfb_process:
             os.kill(self.xvfb_process.pid, 9)
             os.waitpid(self.xvfb_process.pid, 0)
@@ -438,3 +592,142 @@ class SeleniumPlugin(Plugin):
 
         driver.save_screenshot(ss_file)
 
+class DjangoSphinxPlugin(Plugin):
+    name = 'djangosphinx'
+
+    def options(self, parser, env=os.environ):
+        """
+        Sphinx config file that can optionally take the following python
+        template string arguments:
+
+        ``database_name``
+        ``database_password``
+        ``database_username``
+        ``sphinx_search_data_dir``
+        ``searchd_log_dir``
+        """
+        parser.add_option('--sphinx-config-tpl',
+                          help='Path to the Sphinx configuration file template.')
+
+        super(DjangoSphinxPlugin, self).options(parser, env)
+
+    def configure(self, options, config):
+        if options.sphinx_config_tpl:
+            self.sphinx_config_tpl = os.path.abspath(options.sphinx_config_tpl)
+
+            # Create a directory for storing the configs, logs and index files
+            self.tmp_sphinx_dir = tempfile.mkdtemp()
+
+            self.searchd_port = 45798
+
+        super(DjangoSphinxPlugin, self).configure(options, config)
+
+    def startTest(self, test):
+        from django.conf import settings
+        from django.db import connection
+        if 'mysql' in connection.settings_dict['ENGINE']:
+            # Using startTest instead of beforeTest so that we can be sure that
+            # the fixtures were already loaded with nosedjango's beforeTest
+            build_sphinx_index = getattr(test, 'build_sphinx_index', False)
+            run_sphinx_searchd = getattr(test, 'run_sphinx_searchd', False)
+
+            if run_sphinx_searchd:
+                # Need to build the config
+
+                # Update the DjangoSphinx client to use the proper port and index
+                settings.SPHINX_PORT = self.searchd_port
+                from djangosphinx import models as dj_sphinx_models
+                dj_sphinx_models.SPHINX_PORT = self.searchd_port
+
+                # Generate the sphinx configuration file from the template
+                sphinx_config_path = os.path.join(self.tmp_sphinx_dir, 'sphinx.conf')
+
+                db_dict = connection.settings_dict
+                with open(self.sphinx_config_tpl, 'r') as tpl_f:
+                    context = {
+                        'database_name': db_dict['NAME'],
+                        'database_username': db_dict['USER'],
+                        'database_password': db_dict['PASSWORD'],
+                        'sphinx_search_data_dir': self.tmp_sphinx_dir,
+                        'searchd_log_dir': self.tmp_sphinx_dir,
+                    }
+                    tpl = tpl_f.read()
+                    output = tpl % context
+
+                    with open(sphinx_config_path, 'w') as sphinx_conf_f:
+                        sphinx_conf_f.write(output)
+                        sphinx_conf_f.flush()
+
+
+            if build_sphinx_index:
+                self._build_sphinx_index(sphinx_config_path)
+            if run_sphinx_searchd:
+                self._start_searchd(sphinx_config_path)
+
+    def afterTest(self, test):
+        from django.db import connection
+        if 'mysql' in connection.settings_dict['ENGINE']:
+            if getattr(test.context, 'run_sphinx_searchd', False):
+                self._stop_searchd()
+
+    def finalize(self, test):
+        # Delete the temporary sphinx directory
+        shutil.rmtree(self.tmp_sphinx_dir, ignore_errors=True)
+
+    def _build_sphinx_index(self, config):
+        indexer = subprocess.Popen(['indexer', '--config', config, '--all'],
+                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        if indexer.wait() != 0:
+            print "Sphinx Indexing Problem"
+            stdout, stderr = indexer.communicate()
+            print "stdout: %s" % stdout
+            print "stderr: %s" % stderr
+
+    def _start_searchd(self, config):
+        self._searchd = subprocess.Popen(
+            ['searchd', '--config', config, '--console',
+             '--port', str(self.searchd_port)],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+        returned = self._searchd.poll()
+        if returned != None:
+            print "Sphinx Search unavailable. searchd exited with code: %s" % returned
+            stdout, stderr = self._searchd.communicate()
+            print "stdout: %s" % stdout
+            print "stderr: %s" % stderr
+
+        self._wait_for_connection(self.searchd_port)
+
+    def _wait_for_connection(self, port):
+        """
+        Wait until we can make a socket connection to sphinx.
+        """
+        connected = False
+        max_tries = 10
+        num_tries = 0
+        wait_time = 0.5
+        while not connected or num_tries >= max_tries:
+            time.sleep(wait_time)
+            try:
+                af = socket.AF_INET
+                addr = ('127.0.0.1', port)
+                desc = '%s;%s' % addr
+                sock = socket.socket (af, socket.SOCK_STREAM)
+                sock.connect (addr)
+            except socket.error, msg:
+                if sock:
+                    sock.close()
+                num_tries += 1
+                continue
+            connected = True
+
+        if not connected:
+            print >> sys.stderr, "Error connecting to sphinx searchd"
+
+    def _stop_searchd(self):
+        try:
+            if not self._searchd.poll():
+                os.kill(self._searchd.pid, signal.SIGKILL)
+                self._searchd.wait()
+        except AttributeError:
+            print sys.stderr, "Error stoping sphinx search daemon"

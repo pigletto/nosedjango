@@ -1,0 +1,10 @@
+[
+    {
+        "pk": 2,
+        "model": "polls.poll",
+        "fields": {
+            "question": "Is there fire wood on the island?",
+      	    "pub_date": "2008-01-01 00:00:00"
+        }
+    }
+]
