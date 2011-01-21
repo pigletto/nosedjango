@@ -674,6 +674,9 @@ class SshTunnelPlugin(Plugin):
         Plugin.options(self, parser, env)
 
     def configure(self, options, config):
+        # This is only checked since this plugin is configured regardless if
+        # the sshtunnel flag is used, and we only want this info here if the
+        # --remote-server flag is used
         if options.remote_server:
             try:
                 to_port, from_port = options.to_from_ports.split(':', 1)
