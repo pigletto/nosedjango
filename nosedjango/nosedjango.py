@@ -521,7 +521,6 @@ class SetupSettingsSwitcher():
 
 class CherryPyLiveServerPlugin(Plugin):
     name = 'cherrypyliveserver'
-    activation_parameter = '--with-cherrypyliveserver'
 
     def __init__(self):
         Plugin.__init__(self)
@@ -573,7 +572,6 @@ class CherryPyLiveServerPlugin(Plugin):
 
 class SeleniumPlugin(Plugin):
     name = 'selenium'
-    activation_parameter = '--with-selenium'
 
     def options(self, parser, env=os.environ):
         parser.add_option('--selenium-ss-dir',
@@ -582,12 +580,6 @@ class SeleniumPlugin(Plugin):
         parser.add_option('--headless',
                           help="Run the Selenium tests in a headless mode, with virtual frames starting with the given index (eg. 1)",
                           default=None)
-        parser.add_option('--with-remote-server',
-                          help='Use a remote server to run the tests, must pass in the server address',
-                          )
-        parser.add_option('--to-from-ports',
-                          help='Should be of the form x:y where x is the port that needs to be forwarded to the server and y is the port that the server needs forwarded back to the localhost'
-                          )
         Plugin.options(self, parser, env)
 
     def configure(self, options, config):
@@ -602,43 +594,7 @@ class SeleniumPlugin(Plugin):
         if options.headless:
             self.run_headless = True
             self.x_display_offset = int(options.headless)
-
-        if options.with_remote_server:
-            if options.to_from_ports:
-                try:
-                    to_port, from_port = options.to_from_ports.split(':', 1)
-                except:
-                    raise RuntimeError("--to_from_ports should be of the form x:y")
-                else:
-                    self._to_port = to_port
-                    self._from_port = from_port
-            else:
-                self._to_port = '4444'
-                self._from_port = '8001'
-            self._with_remote_server = options.with_remote_server
         Plugin.configure(self, options, config)
-
-    def begin(self):
-        # If we are using a remote connection we want to create two tunnels,
-        # one to forward from local to server for the port that selenium is
-        # listening to, and another from server to local on the port runserver
-        # is running on
-        if getattr(self, '_with_remote_server', False):
-            command = 'ssh ubuntu@%s -L %s:%s:%s -N -f && ssh -nNT -R %s:localhost:%s ubuntu@%s -f' % (
-                self._with_remote_server,
-                self._to_port,
-                self._with_remote_server,
-                self._to_port,
-                self._from_port,
-                self._from_port,
-                self._with_remote_server,
-            )
-            return_value = os.system(command)
-            assert return_value == 0
-
-    def finalize(self, result):
-        # Clean up all ssh tunnels
-        os.system('killall ssh')
 
     def beforeTest(self, test):
         self.xvfb_process = None
@@ -695,10 +651,64 @@ class SeleniumPlugin(Plugin):
 
         ss_file = os.path.join(self.ss_dir, '%s.png' % test.id())
 
-        # If the test is being run remotly it will not be able to take a
-        # screenshot
-        if not getattr(self, '_with_remote_server', False):
+        # The Remote server does not have the attribute ``save_screenshot``, so
+        # we have to check to see if it is there before using it
+        if hasattr(driver, 'save_screenshot'):
             driver.save_screenshot(ss_file)
+
+class SshTunnelPlugin(Plugin):
+    name = 'sshtunnel'
+
+    def options(self, parser, env=os.environ):
+        parser.add_option('--remote-server',
+                          help='Use a remote server to run the tests, must pass in the server address',
+                          )
+        parser.add_option('--to-from-ports',
+                          help='Should be of the form x:y where x is the port that needs to be forwarded to the server and y is the port that the server needs forwarded back to the localhost',
+                          default='4444:8001',
+                          )
+        parser.add_option('--username',
+                          help='The username with which to create the ssh tunnel to the remote server',
+                          default='ubuntu',
+                          )
+        Plugin.options(self, parser, env)
+
+    def configure(self, options, config):
+        if options.remote_server:
+            try:
+                to_port, from_port = options.to_from_ports.split(':', 1)
+            except:
+                raise RuntimeError("--to_from_ports should be of the form x:y")
+            else:
+                self._to_port = to_port
+                self._from_port = from_port
+            self._remote_server = options.remote_server
+            self._username = options.username
+        Plugin.configure(self, options, config)
+
+    def begin(self):
+        # If we are using a remote connection we want to create two tunnels,
+        # one to forward from local to server for the port that selenium is
+        # listening to, and another from server to local on the port runserver
+        # is running on
+        if getattr(self, '_remote_server', False):
+            command = 'ssh %s@%s -L %s:%s:%s -N -f && ssh -nNT -R %s:localhost:%s %s@%s -f' % (
+                self._username,
+                self._remote_server,
+                self._to_port,
+                self._remote_server,
+                self._to_port,
+                self._from_port,
+                self._from_port,
+                self._username,
+                self._remote_server,
+            )
+            return_value = os.system(command)
+            assert return_value == 0
+
+    def finalize(self, result):
+        # Clean up all ssh tunnels
+        os.system('killall ssh')
 
 class DjangoSphinxPlugin(Plugin):
     name = 'djangosphinx'
