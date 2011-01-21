@@ -704,7 +704,6 @@ class SshTunnelPlugin(Plugin):
                 '-L',
                 '%(to_port)s:%(host)s:%(to_port)s' % params,
                 '-N',
-                '-f',
             ]
             self.reverse_tunnel_command = [
                 'ssh',
@@ -712,7 +711,6 @@ class SshTunnelPlugin(Plugin):
                 '-R',
                 '%(from_port)s:localhost:%(from_port)s' % params,
                 '%(username)s@%(host)s' % params,
-                '-f',
             ]
             self._tunnel = subprocess.Popen(
                 self.tunnel_command,
@@ -727,19 +725,12 @@ class SshTunnelPlugin(Plugin):
 
     def finalize(self, result):
         # Clean up all ssh tunnels
-        proc = subprocess.Popen(
-            'ps aux',
-            shell=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-        )
-        stdoutdata, stderrdata_ = proc.communicate()
-        tunnel_command = ' '.join(self.tunnel_command)
-        reverse_tunnel_command = ' '.join(self.reverse_tunnel_command)
-        for line in stdoutdata.split('\n'):
-            if tunnel_command in line or reverse_tunnel_command in line:
-                pid = int(line.split()[1])
-                os.kill(pid, signal.SIGTERM)
+        if not self._tunnel.poll():
+            os.kill(self._tunnel.pid, signal.SIGKILL)
+            self._tunnel.wait()
+        if not self._reverse_tunnel.poll():
+            os.kill(self._reverse_tunnel.pid, signal.SIGKILL)
+            self._reverse_tunnel.wait()
 
 class DjangoSphinxPlugin(Plugin):
     name = 'djangosphinx'
