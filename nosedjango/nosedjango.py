@@ -698,13 +698,48 @@ class SshTunnelPlugin(Plugin):
                 'to_port': self._to_port,
                 'from_port': self._from_port,
             }
-            command = 'ssh %(username)s@%(host)s -L %(to_port)s:%(host)s:%(to_port)s -N -f && ssh -nNT -R %(from_port)s:localhost:%(from_port)s %(username)s@%(host)s -f' % params
-            return_value = os.system(command)
-            assert return_value == 0
+            self.tunnel_command = [
+                'ssh',
+                '%(username)s@%(host)s' % params,
+                '-L',
+                '%(to_port)s:%(host)s:%(to_port)s' % params,
+                '-N',
+                '-f',
+            ]
+            self.reverse_tunnel_command = [
+                'ssh',
+                '-nNT',
+                '-R',
+                '%(from_port)s:localhost:%(from_port)s' % params,
+                '%(username)s@%(host)s' % params,
+                '-f',
+            ]
+            self._tunnel = subprocess.Popen(
+                self.tunnel_command,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            self._reverse_tunnel = subprocess.Popen(
+                self.reverse_tunnel_command,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
 
     def finalize(self, result):
         # Clean up all ssh tunnels
-        os.system('killall ssh')
+        proc = subprocess.Popen(
+            'ps aux',
+            shell=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+        )
+        stdoutdata, stderrdata_ = proc.communicate()
+        tunnel_command = ' '.join(self.tunnel_command)
+        reverse_tunnel_command = ' '.join(self.reverse_tunnel_command)
+        for line in stdoutdata.split('\n'):
+            if tunnel_command in line or reverse_tunnel_command in line:
+                pid = int(line.split()[1])
+                os.kill(pid, signal.SIGTERM)
 
 class DjangoSphinxPlugin(Plugin):
     name = 'djangosphinx'
