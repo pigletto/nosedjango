@@ -692,17 +692,13 @@ class SshTunnelPlugin(Plugin):
         # listening to, and another from server to local on the port runserver
         # is running on
         if getattr(self, '_remote_server', False):
-            command = 'ssh %s@%s -L %s:%s:%s -N -f && ssh -nNT -R %s:localhost:%s %s@%s -f' % (
-                self._username,
-                self._remote_server,
-                self._to_port,
-                self._remote_server,
-                self._to_port,
-                self._from_port,
-                self._from_port,
-                self._username,
-                self._remote_server,
-            )
+            params = {
+                'username': self._username,
+                'host': self._remote_server,
+                'to_port': self._to_port,
+                'from_port': self._from_port,
+            }
+            command = 'ssh %(username)@%(host) -L %(to_port):%(host):%(to_port) -N -f && ssh -nNT -R %(from_port):localhost:%(from_port) %(username)@%(host) -f' % params
             return_value = os.system(command)
             assert return_value == 0
 
