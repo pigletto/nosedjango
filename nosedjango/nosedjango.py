@@ -698,7 +698,7 @@ class SshTunnelPlugin(Plugin):
                 'to_port': self._to_port,
                 'from_port': self._from_port,
             }
-            command = 'ssh %(username)@%(host) -L %(to_port):%(host):%(to_port) -N -f && ssh -nNT -R %(from_port):localhost:%(from_port) %(username)@%(host) -f' % params
+            command = 'ssh %(username)s@%(host)s -L %(to_port)s:%(host)s:%(to_port)s -N -f && ssh -nNT -R %(from_port)s:localhost:%(from_port)s %(username)s@%(host)s -f' % params
             return_value = os.system(command)
             assert return_value == 0
 
