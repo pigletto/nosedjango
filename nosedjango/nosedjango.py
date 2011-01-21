@@ -623,7 +623,7 @@ class SeleniumPlugin(Plugin):
         # one to forward from local to server for the port that selenium is
         # listening to, and another from server to local on the port runserver
         # is running on
-        if self._with_remote_server:
+        if getattr(self, '_with_remote_server', False):
             command = 'ssh ubuntu@%s -L %s:%s:%s -N -f && ssh -nNT -R %s:localhost:%s ubuntu@%s -f' % (
                 self._with_remote_server,
                 self._to_port,
@@ -697,7 +697,7 @@ class SeleniumPlugin(Plugin):
 
         # If the test is being run remotly it will not be able to take a
         # screenshot
-        if not self._with_remote_server:
+        if not getattr(self, '_with_remote_server', False):
             driver.save_screenshot(ss_file)
 
 class DjangoSphinxPlugin(Plugin):
