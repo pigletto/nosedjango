@@ -25,6 +25,7 @@ import nose.case
 
 from selenium.firefox.webdriver import WebDriver as FirefoxWebDriver
 from selenium.remote.webdriver import WebDriver as SauceDriver
+from selenium.common.exceptions import ErrorInResponseException
 
 from django.core.files.storage import FileSystemStorage
 from django.core.handlers.wsgi import WSGIHandler
@@ -644,7 +645,12 @@ class SeleniumPlugin(Plugin):
 
 
     def finalize(self, result):
-        self.get_driver().quit()
+        try:
+            self.get_driver().quit()
+        except OSError:
+            # If the driver errors out on quiting, do nothing, the xvfb will
+            # deal with it
+            pass
         if self.xvfb_process:
             os.kill(self.xvfb_process.pid, 9)
             os.waitpid(self.xvfb_process.pid, 0)
@@ -662,21 +668,27 @@ class SeleniumPlugin(Plugin):
             self.x_display_counter += 1
 
     def beforeTest(self, test):
+        logging.basicConfig(level=logging.INFO)
         driver = self.get_driver()
         setattr(test.test, 'driver', driver)
+        # need to know the main window handle for cleaning up extra windows at
+        # the end of each test
         self._current_windows_handle = driver.get_current_window_handle()
 
     def afterTest(self, test):
         driver = getattr(test.test, 'driver', False)
         if driver and self._current_windows_handle:
+            # close all extra windows except for the main window
             for window in driver.get_window_handles():
                 if window != self._current_windows_handle:
                     driver.switch_to_window(window)
                     driver.close()
                     driver.switch_to_window(self._current_windows_handle)
         try:
+            # deal with the onbeforeunload if it is there until selenium has a
+            # way to do so in the api
             driver.execute_script('window.onbeforeunload = function(){};')
-        except:
+        except (ErrorInResponseException, AssertionError):
             pass
 
     def handleError(self, test, err):
