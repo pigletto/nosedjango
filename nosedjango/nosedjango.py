@@ -607,6 +607,7 @@ class SeleniumPlugin(Plugin):
         self._remote_server_address = options.remote_server_address
         self._selenium_port = options.selenium_port
         self._driver = None
+        self._current_windows_handle = None
 
         self.x_display_counter = 1
         self.x_display_offset = 1
@@ -644,10 +645,13 @@ class SeleniumPlugin(Plugin):
 
     def finalize(self, result):
         self.get_driver().quit()
+        if self.xvfb_process:
+            os.kill(self.xvfb_process.pid, 9)
+            os.waitpid(self.xvfb_process.pid, 0)
 
-    def beforeTest(self, test):
+    def begin(self):
         self.xvfb_process = None
-        if getattr(test.context, 'selenium', False) and self.run_headless:
+        if self.run_headless:
             xvfb_display = (self.x_display_counter % 2) + self.x_display_offset
             try:
                 self.xvfb_process = subprocess.Popen(['xvfb', ':%s' % xvfb_display, '-ac', '-screen', '0', '1024x768x24'], stderr=subprocess.PIPE)
@@ -656,12 +660,20 @@ class SeleniumPlugin(Plugin):
                 self.xvfb_process = subprocess.Popen(['Xvfb', ':%s' % xvfb_display, '-ac', '-screen', '0', '1024x768x24'], stderr=subprocess.PIPE)
             os.environ['DISPLAY'] = ':%s' % xvfb_display
             self.x_display_counter += 1
-        setattr(test.test, 'driver', self.get_driver())
+
+    def beforeTest(self, test):
+        driver = self.get_driver()
+        setattr(test.test, 'driver', driver)
+        self._current_windows_handle = driver.get_current_window_handle()
 
     def afterTest(self, test):
-        if self.xvfb_process:
-            os.kill(self.xvfb_process.pid, 9)
-            os.waitpid(self.xvfb_process.pid, 0)
+        driver = getattr(test.test, 'driver', False)
+        if driver and self._current_windows_handle:
+            for window in driver.get_window_handles():
+                if window != self._current_windows_handle:
+                    driver.switch_to_window(window)
+                    driver.close()
+                    driver.switch_to_window(self._current_windows_handle)
 
     def handleError(self, test, err):
         if isinstance(test, nose.case.Test) and \
