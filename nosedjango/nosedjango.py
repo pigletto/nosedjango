@@ -674,6 +674,10 @@ class SeleniumPlugin(Plugin):
                     driver.switch_to_window(window)
                     driver.close()
                     driver.switch_to_window(self._current_windows_handle)
+        try:
+            driver.execute_script('window.onbeforeunload = function(){};')
+        except:
+            pass
 
     def handleError(self, test, err):
         if isinstance(test, nose.case.Test) and \
