@@ -6,6 +6,7 @@ are run, and tears the test database (or schema) down after all tests are run.
 
 from __future__ import with_statement
 
+import logging
 import os, sys, shutil
 import re
 import subprocess
@@ -14,12 +15,16 @@ import tempfile
 import math, string, random
 import socket
 import time
+import urllib2
 
 from time import sleep
 
 from nose.plugins import Plugin
 from nose.plugins.skip import SkipTest
 import nose.case
+
+from selenium.firefox.webdriver import WebDriver as FirefoxWebDriver
+from selenium.remote.webdriver import WebDriver as SauceDriver
 
 from django.core.files.storage import FileSystemStorage
 from django.core.handlers.wsgi import WSGIHandler
@@ -569,7 +574,6 @@ class CherryPyLiveServerPlugin(Plugin):
             self.httpd.stop()
             self.server_started = False
 
-
 class SeleniumPlugin(Plugin):
     name = 'selenium'
 
@@ -580,6 +584,15 @@ class SeleniumPlugin(Plugin):
         parser.add_option('--headless',
                           help="Run the Selenium tests in a headless mode, with virtual frames starting with the given index (eg. 1)",
                           default=None)
+        parser.add_option('--driver-type',
+                          help='The type of driver that needs to be created',
+                          default='firefox')
+        parser.add_option('--remote-server-address',
+                          help='Use a remote server to run the tests, must pass in the server address',
+                          default='localhost')
+        parser.add_option('--selenium-port',
+                          help='The port for the selenium server',
+                          default='4444')
         Plugin.options(self, parser, env)
 
     def configure(self, options, config):
@@ -587,6 +600,13 @@ class SeleniumPlugin(Plugin):
             self.ss_dir = os.path.abspath(options.selenium_ss_dir)
         else:
             self.ss_dir = os.path.abspath('failure_screenshots')
+        valid_browsers = ['firefox', 'internet_explorer', 'chrome']
+        if options.driver_type not in valid_browsers:
+            raise RuntimeError('--driver-type must be one of: %s' % ' '.join(valid_browsers))
+        self._driver_type = options.driver_type.replace('_', ' ')
+        self._remote_server_address = options.remote_server_address
+        self._selenium_port = options.selenium_port
+        self._driver = None
 
         self.x_display_counter = 1
         self.x_display_offset = 1
@@ -595,6 +615,35 @@ class SeleniumPlugin(Plugin):
             self.run_headless = True
             self.x_display_offset = int(options.headless)
         Plugin.configure(self, options, config)
+
+    def get_driver(self):
+        # Lazilly gets the driver one time cant call in begin since ssh tunnel
+        # may not be created
+        if self._driver:
+            return self._driver
+        if self._driver_type == 'firefox':
+            self._driver = FirefoxWebDriver()
+            return self._driver
+        else:
+            timeout = 60
+            step = 1
+            current = 0
+            while current < timeout:
+                try:
+                    self._driver = SauceDriver(
+                        'http://%s:%s/wd/hub' % (self._remote_server_address, self._selenium_port),
+                        self._driver_type,
+                        'WINDOWS',
+                    )
+                    return self._driver
+                except urllib2.URLError:
+                    time.sleep(step)
+                    current += step
+            raise urllib2.URLError('timeout')
+
+
+    def finalize(self, result):
+        self.get_driver().quit()
 
     def beforeTest(self, test):
         self.xvfb_process = None
@@ -607,22 +656,9 @@ class SeleniumPlugin(Plugin):
                 self.xvfb_process = subprocess.Popen(['Xvfb', ':%s' % xvfb_display, '-ac', '-screen', '0', '1024x768x24'], stderr=subprocess.PIPE)
             os.environ['DISPLAY'] = ':%s' % xvfb_display
             self.x_display_counter += 1
+        setattr(test.test, 'driver', self.get_driver())
 
     def afterTest(self, test):
-        if getattr(test.context, 'selenium', False):
-            driver_attr = getattr(test.context, 'selenium_driver_attr', 'driver')
-            try:
-                driver = getattr(test.test, driver_attr)
-                driver.quit()
-            except:
-                print >> sys.stderr, "Error stopping selenium driver"
-                time.sleep(1)
-                try:
-                    driver = getattr(test.test, driver_attr)
-                    driver.quit()
-                    print >> sys.stderr, "Error closing browser"
-                except OSError:
-                    pass
         if self.xvfb_process:
             os.kill(self.xvfb_process.pid, 9)
             os.waitpid(self.xvfb_process.pid, 0)
