@@ -16,6 +16,7 @@ import math, string, random
 import socket
 import time
 import urllib2
+import httplib
 
 from time import sleep
 
@@ -24,7 +25,7 @@ from nose.plugins.skip import SkipTest
 import nose.case
 
 from selenium.firefox.webdriver import WebDriver as FirefoxWebDriver
-from selenium.remote.webdriver import WebDriver as SauceDriver
+from selenium.remote.webdriver import WebDriver as RemoteDriver
 from selenium.common.exceptions import ErrorInResponseException
 
 from django.core.files.storage import FileSystemStorage
@@ -622,31 +623,37 @@ class SeleniumPlugin(Plugin):
         # Lazilly gets the driver one time cant call in begin since ssh tunnel
         # may not be created
         if self._driver:
-            return self._driver
-        if self._driver_type == 'firefox':
+            pass
+        elif self._driver_type == 'firefox':
             self._driver = FirefoxWebDriver()
-            return self._driver
         else:
             timeout = 60
             step = 1
             current = 0
             while current < timeout:
                 try:
-                    self._driver = SauceDriver(
+                    self._driver = RemoteDriver(
                         'http://%s:%s/wd/hub' % (self._remote_server_address, self._selenium_port),
                         self._driver_type,
                         'WINDOWS',
                     )
-                    return self._driver
+                    break
                 except urllib2.URLError:
                     time.sleep(step)
                     current += step
-            raise urllib2.URLError('timeout')
+                except httplib.BadStatusLine:
+                    self._driver = None
+            if current >= timeout:
+                raise urllib2.URLError('timeout')
+        logging.getLogger().setLevel(logging.INFO)
+        return self._driver
 
 
     def finalize(self, result):
         try:
-            self.get_driver().quit()
+            driver = self.get_driver()
+            if driver:
+                self.get_driver().quit()
         except OSError:
             # If the driver errors out on quiting, do nothing, the xvfb will
             # deal with it
@@ -673,7 +680,8 @@ class SeleniumPlugin(Plugin):
         setattr(test.test, 'driver', driver)
         # need to know the main window handle for cleaning up extra windows at
         # the end of each test
-        self._current_windows_handle = driver.get_current_window_handle()
+        if driver:
+            self._current_windows_handle = driver.get_current_window_handle()
 
     def afterTest(self, test):
         driver = getattr(test.test, 'driver', False)
@@ -687,7 +695,8 @@ class SeleniumPlugin(Plugin):
         try:
             # deal with the onbeforeunload if it is there until selenium has a
             # way to do so in the api
-            driver.execute_script('window.onbeforeunload = function(){};')
+            if driver:
+                driver.execute_script('window.onbeforeunload = function(){};')
         except (ErrorInResponseException, AssertionError):
             pass
 
