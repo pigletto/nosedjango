@@ -654,7 +654,7 @@ class SeleniumPlugin(Plugin):
             driver = self.get_driver()
             if driver:
                 self.get_driver().quit()
-        except OSError:
+        except Exception:
             # If the driver errors out on quiting, do nothing, the xvfb will
             # deal with it
             pass
