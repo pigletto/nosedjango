@@ -665,14 +665,13 @@ class SeleniumPlugin(Plugin):
     def begin(self):
         self.xvfb_process = None
         if self.run_headless:
-            xvfb_display = (self.x_display_counter % 2) + self.x_display_offset
+            xvfb_display = self.x_display_offset
             try:
                 self.xvfb_process = subprocess.Popen(['xvfb', ':%s' % xvfb_display, '-ac', '-screen', '0', '1024x768x24'], stderr=subprocess.PIPE)
             except OSError:
                 # Newer distros use Xvfb
                 self.xvfb_process = subprocess.Popen(['Xvfb', ':%s' % xvfb_display, '-ac', '-screen', '0', '1024x768x24'], stderr=subprocess.PIPE)
             os.environ['DISPLAY'] = ':%s' % xvfb_display
-            self.x_display_counter += 1
 
     def beforeTest(self, test):
         logging.basicConfig(level=logging.INFO)
