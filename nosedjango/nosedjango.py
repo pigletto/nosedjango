@@ -25,6 +25,7 @@ from nose.plugins.skip import SkipTest
 import nose.case
 
 from selenium.firefox.webdriver import WebDriver as FirefoxWebDriver
+from selenium.chrome.webdriver import WebDriver as ChromeDriver
 from selenium.remote.webdriver import WebDriver as RemoteDriver
 from selenium.common.exceptions import ErrorInResponseException
 
@@ -611,21 +612,23 @@ class SeleniumPlugin(Plugin):
         self._driver = None
         self._current_windows_handle = None
 
-        self.x_display_counter = 1
-        self.x_display_offset = 1
+        self.x_display = 1
         self.run_headless = False
         if options.headless:
             self.run_headless = True
-            self.x_display_offset = int(options.headless)
+            self.x_display = int(options.headless)
         Plugin.configure(self, options, config)
 
     def get_driver(self):
         # Lazilly gets the driver one time cant call in begin since ssh tunnel
         # may not be created
         if self._driver:
-            pass
-        elif self._driver_type == 'firefox':
+            return self._driver
+
+        if self._driver_type == 'firefox':
             self._driver = FirefoxWebDriver()
+        elif self._driver_type == 'chrome':
+            self._driver = ChromeDriver()
         else:
             timeout = 60
             step = 1
@@ -643,21 +646,19 @@ class SeleniumPlugin(Plugin):
                     current += step
                 except httplib.BadStatusLine:
                     self._driver = None
+                    break
             if current >= timeout:
                 raise urllib2.URLError('timeout')
-        logging.getLogger().setLevel(logging.INFO)
+
+        # Set the logging level to INFO
         return self._driver
 
 
     def finalize(self, result):
-        try:
-            driver = self.get_driver()
-            if driver:
-                self.get_driver().quit()
-        except Exception:
-            # If the driver errors out on quiting, do nothing, the xvfb will
-            # deal with it
-            pass
+        driver = self.get_driver()
+        if driver:
+            self.get_driver().quit()
+
         if self.xvfb_process:
             os.kill(self.xvfb_process.pid, 9)
             os.waitpid(self.xvfb_process.pid, 0)
@@ -665,7 +666,7 @@ class SeleniumPlugin(Plugin):
     def begin(self):
         self.xvfb_process = None
         if self.run_headless:
-            xvfb_display = self.x_display_offset
+            xvfb_display = self.x_display
             try:
                 self.xvfb_process = subprocess.Popen(['xvfb', ':%s' % xvfb_display, '-ac', '-screen', '0', '1024x768x24'], stderr=subprocess.PIPE)
             except OSError:
@@ -674,8 +675,8 @@ class SeleniumPlugin(Plugin):
             os.environ['DISPLAY'] = ':%s' % xvfb_display
 
     def beforeTest(self, test):
-        logging.basicConfig(level=logging.INFO)
         driver = self.get_driver()
+        logging.getLogger().setLevel(logging.INFO)
         setattr(test.test, 'driver', driver)
         # need to know the main window handle for cleaning up extra windows at
         # the end of each test
@@ -684,18 +685,19 @@ class SeleniumPlugin(Plugin):
 
     def afterTest(self, test):
         driver = getattr(test.test, 'driver', False)
-        if driver and self._current_windows_handle:
+        if not driver:
+            return
+        if self._current_windows_handle:
             # close all extra windows except for the main window
             for window in driver.get_window_handles():
                 if window != self._current_windows_handle:
                     driver.switch_to_window(window)
                     driver.close()
                     driver.switch_to_window(self._current_windows_handle)
+        # deal with the onbeforeunload if it is there until selenium has a
+        # way to do so in the api
         try:
-            # deal with the onbeforeunload if it is there until selenium has a
-            # way to do so in the api
-            if driver:
-                driver.execute_script('window.onbeforeunload = function(){};')
+            driver.execute_script('window.onbeforeunload = function(){};')
         except (ErrorInResponseException, AssertionError):
             pass
 
