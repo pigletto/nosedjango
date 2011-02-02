@@ -487,6 +487,7 @@ class SetupCeleryTesting():
     def before(self):
         from django.conf import settings
         settings.CELERY_ALWAYS_EAGER = True
+        settings.CELERY_RESULTS_BACKEND = 'database'
 
     def after(self):
         pass
