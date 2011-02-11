@@ -611,7 +611,6 @@ class SeleniumPlugin(Plugin):
         self._selenium_port = options.selenium_port
         self._driver = None
         self._current_windows_handle = None
-        logging.warning('in config')
 
         self.x_display = 1
         self.run_headless = False
@@ -623,7 +622,6 @@ class SeleniumPlugin(Plugin):
     def get_driver(self):
         # Lazilly gets the driver one time cant call in begin since ssh tunnel
         # may not be created
-        logging.warning('in get driver')
         if self._driver:
             return self._driver
 
@@ -637,7 +635,6 @@ class SeleniumPlugin(Plugin):
             current = 0
             while current < timeout:
                 try:
-                    logging.warning('remote')
                     self._driver = RemoteDriver(
                         'http://%s:%s/wd/hub' % (self._remote_server_address, self._selenium_port),
                         self._driver_type,
@@ -667,7 +664,6 @@ class SeleniumPlugin(Plugin):
             os.waitpid(self.xvfb_process.pid, 0)
 
     def begin(self):
-        logging.warning('server address %s', self._remote_server_address)
         self.xvfb_process = None
         if self.run_headless:
             xvfb_display = self.x_display
