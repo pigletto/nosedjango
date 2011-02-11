@@ -27,7 +27,10 @@ import nose.case
 from selenium.firefox.webdriver import WebDriver as FirefoxWebDriver
 from selenium.chrome.webdriver import WebDriver as ChromeDriver
 from selenium.remote.webdriver import WebDriver as RemoteDriver
-from selenium.common.exceptions import ErrorInResponseException
+from selenium.common.exceptions import (
+    ErrorInResponseException,
+    WebDriverException,
+)
 
 from django.core.files.storage import FileSystemStorage
 from django.core.handlers.wsgi import WSGIHandler
@@ -700,6 +703,10 @@ class SeleniumPlugin(Plugin):
             driver.execute_script('window.onbeforeunload = function(){};')
         except (ErrorInResponseException, AssertionError):
             pass
+        except WebDriverException:
+            driver.quit()
+            self._driver = None
+            
 
     def handleError(self, test, err):
         if isinstance(test, nose.case.Test) and \
