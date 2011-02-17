@@ -27,7 +27,10 @@ import nose.case
 from selenium.firefox.webdriver import WebDriver as FirefoxWebDriver
 from selenium.chrome.webdriver import WebDriver as ChromeDriver
 from selenium.remote.webdriver import WebDriver as RemoteDriver
-from selenium.common.exceptions import ErrorInResponseException
+from selenium.common.exceptions import (
+    ErrorInResponseException,
+    WebDriverException,
+)
 
 from django.core.files.storage import FileSystemStorage
 from django.core.handlers.wsgi import WSGIHandler
@@ -702,6 +705,10 @@ class SeleniumPlugin(Plugin):
             driver.execute_script('window.onbeforeunload = function(){};')
         except (ErrorInResponseException, AssertionError):
             pass
+        except WebDriverException:
+            driver.quit()
+            self._driver = None
+            
 
     def handleError(self, test, err):
         if isinstance(test, nose.case.Test) and \
@@ -745,7 +752,7 @@ class SshTunnelPlugin(Plugin):
                           )
         parser.add_option('--username',
                           help='The username with which to create the ssh tunnel to the remote server',
-                          default='ubuntu',
+                          default=None,
                           )
         Plugin.options(self, parser, env)
 
@@ -777,9 +784,12 @@ class SshTunnelPlugin(Plugin):
                 'to_port': self._to_port,
                 'from_port': self._from_port,
             }
+            host_str = self._remote_server
+            if self._username:
+                host_str = '%(username)s@%(host)s' % params,
             self.tunnel_command = [
                 'ssh',
-                '%(username)s@%(host)s' % params,
+                host_str,
                 '-L',
                 '%(to_port)s:%(host)s:%(to_port)s' % params,
                 '-N',
@@ -789,7 +799,7 @@ class SshTunnelPlugin(Plugin):
                 '-nNT',
                 '-R',
                 '%(from_port)s:localhost:%(from_port)s' % params,
-                '%(username)s@%(host)s' % params,
+                host_str,
             ]
             self._tunnel = subprocess.Popen(
                 self.tunnel_command,
