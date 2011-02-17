@@ -409,6 +409,7 @@ def custom_before(use_testfs=True):
         'DOCUMENT_IMPORT_STORAGE_DIR': 'document_import%(token)s',
         'DOCUMENT_SETTINGS_STORAGE_DIR': 'document_settings%(token)s',
         'ATTACHMENT_STORAGE_PREFIX': 'attachments%(token)s',
+        'MAILER_LOCKFILE': 'send_mail%(token)s',
     }
     settings_switcher = SetupSettingsSwitcher(switched_settings)
 
