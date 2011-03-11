@@ -6,6 +6,7 @@ are run, and tears the test database (or schema) down after all tests are run.
 
 from __future__ import with_statement
 
+import logging
 import os, sys, shutil
 import re
 import subprocess
@@ -14,12 +15,26 @@ import tempfile
 import math, string, random
 import socket
 import time
+import urllib2
+import httplib
 
 from time import sleep
 
 from nose.plugins import Plugin
 from nose.plugins.skip import SkipTest
 import nose.case
+
+from selenium.firefox.webdriver import WebDriver as FirefoxWebDriver
+from selenium.chrome.webdriver import WebDriver as ChromeDriver
+from selenium.remote.webdriver import WebDriver as RemoteDriver
+from selenium.common.exceptions import (
+    ErrorInResponseException,
+    WebDriverException,
+)
+
+from django.core.files.storage import FileSystemStorage
+from django.core.handlers.wsgi import WSGIHandler
+from django.core.servers.basehttp import  AdminMediaHandler
 
 # Force settings.py pointer
 # search the current working directory and all parent directories to find
@@ -432,6 +447,7 @@ def custom_before(use_testfs=True):
         'DOCUMENT_IMPORT_STORAGE_DIR': 'document_import%(token)s',
         'DOCUMENT_SETTINGS_STORAGE_DIR': 'document_settings%(token)s',
         'ATTACHMENT_STORAGE_PREFIX': 'attachments%(token)s',
+        'MAILER_LOCKFILE': 'send_mail%(token)s',
     }
     settings_switcher = SetupSettingsSwitcher(switched_settings)
 
@@ -477,6 +493,7 @@ class SetupCeleryTesting():
     def before(self):
         from django.conf import settings
         settings.CELERY_ALWAYS_EAGER = True
+        settings.CELERY_RESULTS_BACKEND = 'database'
 
     def after(self):
         pass
@@ -509,7 +526,6 @@ class SetupSettingsSwitcher():
 
 class SeleniumPlugin(Plugin):
     name = 'selenium'
-    activation_parameter = '--with-selenium'
 
     def options(self, parser, env=os.environ):
         parser.add_option('--selenium-ss-dir',
@@ -518,6 +534,15 @@ class SeleniumPlugin(Plugin):
         parser.add_option('--headless',
                           help="Run the Selenium tests in a headless mode, with virtual frames starting with the given index (eg. 1)",
                           default=None)
+        parser.add_option('--driver-type',
+                          help='The type of driver that needs to be created',
+                          default='firefox')
+        parser.add_option('--remote-server-address',
+                          help='Use a remote server to run the tests, must pass in the server address',
+                          default='localhost')
+        parser.add_option('--selenium-port',
+                          help='The port for the selenium server',
+                          default='4444')
         Plugin.options(self, parser, env)
 
     def configure(self, options, config):
@@ -525,46 +550,107 @@ class SeleniumPlugin(Plugin):
             self.ss_dir = os.path.abspath(options.selenium_ss_dir)
         else:
             self.ss_dir = os.path.abspath('failure_screenshots')
+        valid_browsers = ['firefox', 'internet_explorer', 'chrome']
+        if options.driver_type not in valid_browsers:
+            raise RuntimeError('--driver-type must be one of: %s' % ' '.join(valid_browsers))
+        self._driver_type = options.driver_type.replace('_', ' ')
+        self._remote_server_address = options.remote_server_address
+        self._selenium_port = options.selenium_port
+        self._driver = None
+        self._current_windows_handle = None
 
-        self.x_display_counter = 1
-        self.x_display_offset = 1
+        self.x_display = 1
         self.run_headless = False
         if options.headless:
             self.run_headless = True
-            self.x_display_offset = int(options.headless)
-
+            self.x_display = int(options.headless)
         Plugin.configure(self, options, config)
 
-    def beforeTest(self, test):
+    def get_driver(self):
+        # Lazilly gets the driver one time cant call in begin since ssh tunnel
+        # may not be created
+        if self._driver:
+            return self._driver
+
+        if self._driver_type == 'firefox':
+            self._driver = FirefoxWebDriver()
+        elif self._driver_type == 'chrome':
+            self._driver = ChromeDriver()
+        else:
+            timeout = 60
+            step = 1
+            current = 0
+            while current < timeout:
+                try:
+                    self._driver = RemoteDriver(
+                        'http://%s:%s/wd/hub' % (self._remote_server_address, self._selenium_port),
+                        self._driver_type,
+                        'WINDOWS',
+                    )
+                    break
+                except urllib2.URLError:
+                    time.sleep(step)
+                    current += step
+                except httplib.BadStatusLine:
+                    self._driver = None
+                    break
+            if current >= timeout:
+                raise urllib2.URLError('timeout')
+
+        # Set the logging level to INFO
+        return self._driver
+
+
+    def finalize(self, result):
+        driver = self.get_driver()
+        if driver:
+            self.get_driver().quit()
+
+        if self.xvfb_process:
+            os.kill(self.xvfb_process.pid, 9)
+            os.waitpid(self.xvfb_process.pid, 0)
+
+    def begin(self):
         self.xvfb_process = None
-        if getattr(test.context, 'selenium', False) and self.run_headless:
-            xvfb_display = (self.x_display_counter % 2) + self.x_display_offset
+        if self.run_headless:
+            xvfb_display = self.x_display
             try:
                 self.xvfb_process = subprocess.Popen(['xvfb', ':%s' % xvfb_display, '-ac', '-screen', '0', '1024x768x24'], stderr=subprocess.PIPE)
             except OSError:
                 # Newer distros use Xvfb
                 self.xvfb_process = subprocess.Popen(['Xvfb', ':%s' % xvfb_display, '-ac', '-screen', '0', '1024x768x24'], stderr=subprocess.PIPE)
             os.environ['DISPLAY'] = ':%s' % xvfb_display
-            self.x_display_counter += 1
+
+    def beforeTest(self, test):
+        driver = self.get_driver()
+        logging.getLogger().setLevel(logging.INFO)
+        setattr(test.test, 'driver', driver)
+        # need to know the main window handle for cleaning up extra windows at
+        # the end of each test
+        if driver:
+            self._current_windows_handle = driver.get_current_window_handle()
 
     def afterTest(self, test):
-        if getattr(test.context, 'selenium', False):
-            driver_attr = getattr(test.context, 'selenium_driver_attr', 'driver')
-            try:
-                driver = getattr(test.test, driver_attr)
-                driver.quit()
-            except:
-                print >> sys.stderr, "Error stopping selenium driver"
-                time.sleep(1)
-                try:
-                    driver = getattr(test.test, driver_attr)
-                    driver.quit()
-                    print >> sys.stderr, "Error closing browser"
-                except OSError:
-                    pass
-        if self.xvfb_process:
-            os.kill(self.xvfb_process.pid, 9)
-            os.waitpid(self.xvfb_process.pid, 0)
+        driver = getattr(test.test, 'driver', False)
+        if not driver:
+            return
+        if self._current_windows_handle:
+            # close all extra windows except for the main window
+            for window in driver.get_window_handles():
+                if window != self._current_windows_handle:
+                    driver.switch_to_window(window)
+                    driver.close()
+                    driver.switch_to_window(self._current_windows_handle)
+        # deal with the onbeforeunload if it is there until selenium has a
+        # way to do so in the api
+        try:
+            driver.execute_script('window.onbeforeunload = function(){};')
+        except (ErrorInResponseException, AssertionError):
+            pass
+        except WebDriverException:
+            driver.quit()
+            self._driver = None
+            
 
     def handleError(self, test, err):
         if isinstance(test, nose.case.Test) and \
@@ -590,7 +676,92 @@ class SeleniumPlugin(Plugin):
 
         ss_file = os.path.join(self.ss_dir, '%s.png' % test.id())
 
-        driver.save_screenshot(ss_file)
+        # The Remote server does not have the attribute ``save_screenshot``, so
+        # we have to check to see if it is there before using it
+        if hasattr(driver, 'save_screenshot'):
+            driver.save_screenshot(ss_file)
+
+class SshTunnelPlugin(Plugin):
+    name = 'sshtunnel'
+
+    def options(self, parser, env=os.environ):
+        parser.add_option('--remote-server',
+                          help='Use a remote server to run the tests, must pass in the server address',
+                          )
+        parser.add_option('--to-from-ports',
+                          help='Should be of the form x:y where x is the port that needs to be forwarded to the server and y is the port that the server needs forwarded back to the localhost',
+                          default='4444:8001',
+                          )
+        parser.add_option('--username',
+                          help='The username with which to create the ssh tunnel to the remote server',
+                          default=None,
+                          )
+        Plugin.options(self, parser, env)
+
+    def configure(self, options, config):
+        # This is only checked since this plugin is configured regardless if
+        # the sshtunnel flag is used, and we only want this info here if the
+        # --remote-server flag is used
+        if options.remote_server:
+            try:
+                to_port, from_port = options.to_from_ports.split(':', 1)
+            except:
+                raise RuntimeError("--to_from_ports should be of the form x:y")
+            else:
+                self._to_port = to_port
+                self._from_port = from_port
+            self._remote_server = options.remote_server
+            self._username = options.username
+        Plugin.configure(self, options, config)
+
+    def begin(self):
+        # If we are using a remote connection we want to create two tunnels,
+        # one to forward from local to server for the port that selenium is
+        # listening to, and another from server to local on the port runserver
+        # is running on
+        if getattr(self, '_remote_server', False):
+            params = {
+                'username': self._username,
+                'host': self._remote_server,
+                'to_port': self._to_port,
+                'from_port': self._from_port,
+            }
+            host_str = self._remote_server
+            if self._username:
+                host_str = '%(username)s@%(host)s' % params,
+            self.tunnel_command = [
+                'ssh',
+                host_str,
+                '-L',
+                '%(to_port)s:%(host)s:%(to_port)s' % params,
+                '-N',
+            ]
+            self.reverse_tunnel_command = [
+                'ssh',
+                '-nNT',
+                '-R',
+                '%(from_port)s:localhost:%(from_port)s' % params,
+                host_str,
+            ]
+            self._tunnel = subprocess.Popen(
+                self.tunnel_command,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            self._reverse_tunnel = subprocess.Popen(
+                self.reverse_tunnel_command,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+
+    def finalize(self, result):
+        # Clean up all ssh tunnels
+        if not self._tunnel.poll():
+            os.kill(self._tunnel.pid, signal.SIGKILL)
+            self._tunnel.wait()
+        if not self._reverse_tunnel.poll():
+            os.kill(self._reverse_tunnel.pid, signal.SIGKILL)
+            self._reverse_tunnel.wait()
 
 class DjangoSphinxPlugin(Plugin):
     name = 'djangosphinx'
