@@ -84,8 +84,8 @@ setup(
     entry_points = {
         'nose.plugins': [
             'django = nosedjango.nosedjango:NoseDjango',
-            'cherrypyliveserver = nosedjango.plugins.cherrypy:CherryPyLiveServerPlugin',
-            'djangofilestorage = nosedjango.plugins.file_storage:FileStoragePlugin',
+            'cherrypyliveserver = nosedjango.plugins.cherrypy_plugin:CherryPyLiveServerPlugin',
+            'djangofilestorage = nosedjango.plugins.file_storage_plugin:FileStoragePlugin',
             'selenium = nosedjango.nosedjango:SeleniumPlugin',
             'djangosphinxsearch = nosedjango.plugins.sphinxsearch_plugin:SphinxSearchPlugin',
             'sshtunnel = nosedjango.nosedjango:SshTunnelPlugin',

@@ -1,9 +1,10 @@
 import os
+import time
 
 from django.core.handlers.wsgi import WSGIHandler
 from django.core.servers.basehttp import  AdminMediaHandler
 
-from nosedjango.plugins.base import Plugin
+from nosedjango.plugins.base_plugin import Plugin
 
 # Next 3 plugins taken from django-sane-testing: http://github.com/Almad/django-sane-testing
 # By: Lukas "Almad" Linhart http://almad.net/
@@ -14,6 +15,9 @@ from nosedjango.plugins.base import Plugin
 ### Do imports in method to avoid CP as dependency
 ### Code originally written by Mikeal Rogers under Apache License.
 #####
+
+DEFAULT_LIVE_SERVER_ADDRESS = '0.0.0.0'
+DEFAULT_LIVE_SERVER_PORT = '8000'
 
 class CherryPyLiveServerPlugin(Plugin):
     name = 'cherrypyliveserver'
@@ -60,7 +64,7 @@ class CherryPyLiveServerPlugin(Plugin):
         self.httpd_thread.start()
         #FIXME: This could be avoided by passing self to thread class starting django
         # and waiting for Event lock
-        sleep(.5)
+        time.sleep(.5)
 
     def stop_test_server(self):
         if self.server_started:

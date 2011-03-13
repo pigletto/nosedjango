@@ -1,7 +1,7 @@
 import os.path
 import shutil
 
-from nosedjango.plugins.base import Plugin
+from nosedjango.plugins.base_plugin import Plugin
 
 class FileStoragePlugin(Plugin):
     """

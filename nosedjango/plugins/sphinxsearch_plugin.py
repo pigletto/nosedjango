@@ -9,7 +9,7 @@ import sys
 import tempfile
 import time
 
-from nosedjango.plugins.base import Plugin
+from nosedjango.plugins.base_plugin import Plugin
 
 class SphinxSearchPlugin(Plugin):
     """
