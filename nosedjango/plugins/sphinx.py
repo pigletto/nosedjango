@@ -11,12 +11,21 @@ import time
 
 from nosedjango.plugins.base import Plugin
 
-class SphinxPlugin(Plugin):
+class SphinxSearchPlugin(Plugin):
     """
     Plugin for configuring and running a sphinx search process for djangosphinx
     that's hooked up to a django test database.
     """
-    name = 'djangosphinx'
+    name = 'django-sphinxsearch'
+    searchd_port = 45798
+
+    def __init__(self, *args, **kwargs):
+        super(SphinxSearchPlugin, self).__init__(*args, **kwargs)
+
+        self.tmp_sphinx_dir = None
+        self.sphinx_config_tpl = None
+        self._searchd = None
+
 
     def options(self, parser, env=None):
         """
@@ -34,7 +43,7 @@ class SphinxPlugin(Plugin):
         parser.add_option('--sphinx-config-tpl',
                           help='Path to the Sphinx configuration file template.')
 
-        super(SphinxPlugin, self).options(parser, env)
+        super(SphinxSearchPlugin, self).options(parser, env)
 
     def configure(self, options, config):
         if options.sphinx_config_tpl:
@@ -43,9 +52,8 @@ class SphinxPlugin(Plugin):
             # Create a directory for storing the configs, logs and index files
             self.tmp_sphinx_dir = tempfile.mkdtemp()
 
-            self.searchd_port = 45798
 
-        super(SphinxPlugin, self).configure(options, config)
+        super(SphinxSearchPlugin, self).configure(options, config)
 
     def startTest(self, test):
         from django.conf import settings
@@ -138,7 +146,7 @@ class SphinxPlugin(Plugin):
                 addr = ('127.0.0.1', port)
                 sock = socket.socket (af, socket.SOCK_STREAM)
                 sock.connect (addr)
-            except socket.error, msg:
+            except socket.error:
                 if sock:
                     sock.close()
                 num_tries += 1

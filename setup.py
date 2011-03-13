@@ -87,7 +87,7 @@ setup(
             'cherrypyliveserver = nosedjango.plugins.cherrypy:CherryPyLiveServerPlugin',
             'djangofilestorage = nosedjango.plugins.file_storage:FileStoragePlugin',
             'selenium = nosedjango.nosedjango:SeleniumPlugin',
-            'djangosphinx = nosedjango.plugins.sphinx:SphinxPlugin',
+            'djangosphinxsearch = nosedjango.plugins.sphinx:SphinxSearchPlugin',
             'sshtunnel = nosedjango.nosedjango:SshTunnelPlugin',
             ]
         }
