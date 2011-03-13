@@ -6,23 +6,26 @@ are run, and tears the test database (or schema) down after all tests are run.
 
 from __future__ import with_statement
 
-import logging
-import os, sys, shutil
-import re
-import subprocess
-import signal
+import httplib
 import tempfile
-import math, string, random
+import logging
+import math
+import os
+import random
+import re
+import shutil
+import signal
 import socket
+import string
+import subprocess
+import sys
 import time
 import urllib2
-import httplib
-
 from time import sleep
 
+import nose.case
 from nose.plugins import Plugin
 from nose.plugins.skip import SkipTest
-import nose.case
 
 from selenium.firefox.webdriver import WebDriver as FirefoxWebDriver
 from selenium.chrome.webdriver import WebDriver as ChromeDriver
@@ -41,7 +44,6 @@ from django.core.servers.basehttp import  AdminMediaHandler
 from nose.importer import add_path
 if not 'DJANGO_SETTINGS_MODULE' in os.environ:
     os.environ['DJANGO_SETTINGS_MODULE'] = 'settings'
-
 from django.core.management import setup_environ
 
 NT_ROOT = re.compile(r"^[a-zA-Z]:\\$")
