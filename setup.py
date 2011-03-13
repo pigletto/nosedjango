@@ -89,7 +89,7 @@ setup(
             'selenium = nosedjango.nosedjango:SeleniumPlugin',
             'djangosphinxsearch = nosedjango.plugins.sphinxsearch_plugin:SphinxSearchPlugin',
             'sshtunnel = nosedjango.nosedjango:SshTunnelPlugin',
-            'celery = nosedjango.nosedjango.plugins.celery:CeleryPlugin',
+            'celery = nosedjango.nosedjango.plugins.celery_plugin:CeleryPlugin',
             ]
         }
     )
