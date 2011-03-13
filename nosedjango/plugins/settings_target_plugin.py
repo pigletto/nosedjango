@@ -1,7 +1,7 @@
 import os.path
 from ConfigParser import SafeConfigParser
 
-from nosedjango.plugins.base import Plugin
+from nosedjango.plugins.base_plugin import Plugin
 
 CONFIG_FILES = [
     # Linux users will prefer this
