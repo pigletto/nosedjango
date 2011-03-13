@@ -32,7 +32,6 @@ from selenium.common.exceptions import (
     WebDriverException,
 )
 
-from django.core.files.storage import FileSystemStorage
 from django.core.handlers.wsgi import WSGIHandler
 from django.core.servers.basehttp import  AdminMediaHandler
 
@@ -44,9 +43,6 @@ if not 'DJANGO_SETTINGS_MODULE' in os.environ:
     os.environ['DJANGO_SETTINGS_MODULE'] = 'settings'
 
 from django.core.management import setup_environ
-
-DEFAULT_LIVE_SERVER_ADDRESS = '0.0.0.0'
-DEFAULT_LIVE_SERVER_PORT = '8000'
 
 NT_ROOT = re.compile(r"^[a-zA-Z]:\\$")
 def get_settings_path(settings_module):
@@ -122,11 +118,6 @@ class NoseDjango(Plugin):
                           dest='use_sqlite', action="store_true",
                           default=False
                           )
-        parser.add_option('--django-testfs',
-                          help='Use a local isolated test filestyem',
-                          dest='use_testfs', action="store_true",
-                          default=False
-                          )
         super(NoseDjango, self).options(parser, env)
 
     def configure(self, options, conf):
@@ -139,7 +130,6 @@ class NoseDjango(Plugin):
             self.settings_module = 'settings'
 
         self._use_sqlite = options.use_sqlite
-        self._use_testfs = options.use_testfs
 
         super(NoseDjango, self).configure(options, conf)
 
@@ -196,7 +186,7 @@ class NoseDjango(Plugin):
             settings.DATABASE_PASSWORD = ''
 
         # Do our custom testrunner stuff
-        custom_before(use_testfs=self._use_testfs)
+        custom_before()
 
         # Some Django code paths evaluate differently
         # between DEBUG and not DEBUG.  Example of this include the url
@@ -233,8 +223,6 @@ class NoseDjango(Plugin):
         work properly and any tests that depend on external access to the test
         database won't be able to view data created/altered during the test.
         """
-        from django.test import TransactionTestCase, TestCase
-
         if not getattr(test.context, 'use_transaction_isolation', True):
             # The test explicitly says not to use transaction isolation
             return False
@@ -368,8 +356,7 @@ class NoseDjango(Plugin):
         from django.core.management import call_command
         from django.core.urlresolvers import clear_url_caches
         from django.conf import settings
-        from django.db import connection, transaction
-        from django.test import TransactionTestCase
+        from django.db import transaction
 
         use_transaction_isolation = self._should_use_transaction_isolation(
             test, settings)
@@ -423,9 +410,10 @@ class NoseDjango(Plugin):
         from django.test.utils import teardown_test_environment
         from django.db import connection
         from django.conf import settings
+        from django.core.urlresolvers import clear_url_caches
 
         # Clean up our custom testrunner stuff
-        custom_after(use_testfs=self._use_testfs)
+        custom_after()
 
         self.call_plugins_method('beforeDestroyTestDb', settings, connection)
         connection.creation.destroy_test_db(self.old_db, verbosity=self.verbosity)
@@ -440,7 +428,7 @@ class NoseDjango(Plugin):
             settings.ROOT_URLCONF = self.old_urlconf
             clear_url_caches()
 
-def custom_before(use_testfs=True):
+def custom_before():
     setup_celery = SetupCeleryTesting()
     setup_cache = SetupCacheTesting()
     switched_settings = {
@@ -527,7 +515,9 @@ class SetupSettingsSwitcher():
 class SeleniumPlugin(Plugin):
     name = 'selenium'
 
-    def options(self, parser, env=os.environ):
+    def options(self, parser, env=None):
+        if env is None:
+            env = os.environ
         parser.add_option('--selenium-ss-dir',
                           help='Directory for failure screen shots.'
                           )
@@ -650,7 +640,7 @@ class SeleniumPlugin(Plugin):
         except WebDriverException:
             driver.quit()
             self._driver = None
-            
+
 
     def handleError(self, test, err):
         if isinstance(test, nose.case.Test) and \
@@ -684,7 +674,9 @@ class SeleniumPlugin(Plugin):
 class SshTunnelPlugin(Plugin):
     name = 'sshtunnel'
 
-    def options(self, parser, env=os.environ):
+    def options(self, parser, env=None):
+        if env is None:
+            env = os.environ
         parser.add_option('--remote-server',
                           help='Use a remote server to run the tests, must pass in the server address',
                           )
@@ -882,10 +874,9 @@ class DjangoSphinxPlugin(Plugin):
             try:
                 af = socket.AF_INET
                 addr = ('127.0.0.1', port)
-                desc = '%s;%s' % addr
                 sock = socket.socket (af, socket.SOCK_STREAM)
                 sock.connect (addr)
-            except socket.error, msg:
+            except socket.error:
                 if sock:
                     sock.close()
                 num_tries += 1
