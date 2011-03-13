@@ -88,7 +88,7 @@ setup(
             'djangofilestorage = nosedjango.plugins.file_storage_plugin:FileStoragePlugin',
             'selenium = nosedjango.nosedjango:SeleniumPlugin',
             'djangosphinxsearch = nosedjango.plugins.sphinxsearch_plugin:SphinxSearchPlugin',
-            'sshtunnel = nosedjango.nosedjango:SshTunnelPlugin',
+            'sshtunnel = nosedjango.plugins.ssh_tunnel_plugin:SshTunnelPlugin',
             ]
         }
     )
