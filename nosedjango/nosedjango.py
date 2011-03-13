@@ -431,7 +431,6 @@ class NoseDjango(Plugin):
             clear_url_caches()
 
 def custom_before():
-    setup_celery = SetupCeleryTesting()
     setup_cache = SetupCacheTesting()
     switched_settings = {
         'DOCUMENT_IMPORT_STORAGE_DIR': 'document_import%(token)s',
@@ -455,18 +454,10 @@ def custom_before():
     settings_switcher.before()
     #if use_testfs:
     #    setup_fs.before()
-    setup_celery.before()
     setup_cache.before()
 
 def custom_after(use_testfs=True):
-    #if use_testfs:
-    #    setup_fs = SetupTestFilesystem()
-    setup_celery = SetupCeleryTesting()
     setup_cache = SetupCacheTesting()
-
-    #if use_testfs:
-    #    setup_fs.after()
-    setup_celery.after()
     setup_cache.after()
 
 def random_token(bits=128):
@@ -478,15 +469,6 @@ def random_token(bits=128):
     # alphabet length is 64, so each letter provides lg(64) = 6 bits
     num_letters = int(math.ceil(bits / 6.0))
     return ''.join(random.choice(alphabet) for i in range(num_letters))
-
-class SetupCeleryTesting():
-    def before(self):
-        from django.conf import settings
-        settings.CELERY_ALWAYS_EAGER = True
-        settings.CELERY_RESULTS_BACKEND = 'database'
-
-    def after(self):
-        pass
 
 class SetupCacheTesting():
     def before(self):
