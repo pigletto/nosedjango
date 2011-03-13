@@ -1,6 +1,13 @@
 from __future__ import with_statement
 
-import os, tempfile, shutil, subprocess, signal
+import os
+import shutil
+import signal
+import socket
+import subprocess
+import sys
+import tempfile
+import time
 
 from nosedjango.plugins.base import Plugin
 
@@ -9,9 +16,9 @@ class SphinxPlugin(Plugin):
     Plugin for configuring and running a sphinx search process for djangosphinx
     that's hooked up to a django test database.
     """
-    name = 'django-sphinx'
+    name = 'djangosphinx'
 
-    def options(self, parser, env=os.environ):
+    def options(self, parser, env=None):
         """
         Sphinx config file that can optionally take the following python
         template string arguments:
@@ -22,6 +29,8 @@ class SphinxPlugin(Plugin):
         ``sphinx_search_data_dir``
         ``searchd_log_dir``
         """
+        if env is None:
+            env = os.environ
         parser.add_option('--sphinx-config-tpl',
                           help='Path to the Sphinx configuration file template.')
 
@@ -41,7 +50,7 @@ class SphinxPlugin(Plugin):
     def startTest(self, test):
         from django.conf import settings
         from django.db import connection
-        if settings.DATABASE_ENGINE == 'mysql':
+        if 'mysql' in connection.settings_dict['ENGINE']:
             # Using startTest instead of beforeTest so that we can be sure that
             # the fixtures were already loaded with nosedjango's beforeTest
             build_sphinx_index = getattr(test, 'build_sphinx_index', False)
@@ -127,7 +136,6 @@ class SphinxPlugin(Plugin):
             try:
                 af = socket.AF_INET
                 addr = ('127.0.0.1', port)
-                desc = '%s;%s' % addr
                 sock = socket.socket (af, socket.SOCK_STREAM)
                 sock.connect (addr)
             except socket.error, msg:
@@ -146,4 +154,4 @@ class SphinxPlugin(Plugin):
                 os.kill(self._searchd.pid, signal.SIGKILL)
                 self._searchd.wait()
         except AttributeError:
-            print sys.stderr, "Error stoping sphinx search daemon"
+            print sys.stderr, "Error stopping sphinx search daemon"
