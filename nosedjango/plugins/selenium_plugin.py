@@ -7,10 +7,10 @@ import time
 
 import nose.case
 
-from selenium.firefox.webdriver import WebDriver as FirefoxWebDriver
-from selenium.chrome.webdriver import WebDriver as ChromeDriver
-from selenium.remote.webdriver import WebDriver as RemoteDriver
-from selenium.common.exceptions import (
+from selenium.webdriver import Firefox as FirefoxWebDriver
+from selenium.webdriver import Chrome as ChromeDriver
+from selenium.webdriver import Remote as RemoteDriver
+from selenium.webdriver.common.exceptions import (
     ErrorInResponseException,
     WebDriverException,
 )
