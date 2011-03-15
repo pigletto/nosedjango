@@ -164,9 +164,6 @@ class NoseDjango(Plugin):
             settings.DATABASE_USER = ''
             settings.DATABASE_PASSWORD = ''
 
-        # Do our custom testrunner stuff
-        custom_before()
-
         # Some Django code paths evaluate differently
         # between DEBUG and not DEBUG.  Example of this include the url
         # dispatcher when 404's are hit.  Django's own test runner forces DEBUG
@@ -391,9 +388,6 @@ class NoseDjango(Plugin):
         from django.conf import settings
         from django.core.urlresolvers import clear_url_caches
 
-        # Clean up our custom testrunner stuff
-        custom_after()
-
         self.call_plugins_method('beforeDestroyTestDb', settings, connection)
         connection.creation.destroy_test_db(self.old_db, verbosity=self.verbosity)
         self.call_plugins_method('afterDestroyTestDb', settings, connection)
@@ -406,70 +400,3 @@ class NoseDjango(Plugin):
         if hasattr(self, 'old_urlconf'):
             settings.ROOT_URLCONF = self.old_urlconf
             clear_url_caches()
-
-def custom_before():
-    setup_cache = SetupCacheTesting()
-    switched_settings = {
-        'DOCUMENT_IMPORT_STORAGE_DIR': 'document_import%(token)s',
-        'DOCUMENT_SETTINGS_STORAGE_DIR': 'document_settings%(token)s',
-        'ATTACHMENT_STORAGE_PREFIX': 'attachments%(token)s',
-        'MAILER_LOCKFILE': 'send_mail%(token)s',
-    }
-    settings_switcher = SetupSettingsSwitcher(switched_settings)
-
-    from django.conf import settings
-    settings.DOCUMENT_PRINTING_CACHE_ON_SAVE = False
-
-    from pstat.printing.conf import settings as print_settings
-    from pstat.document_backup.conf import settings as backup_settings
-    token = random_token()
-    print_settings.PDF_STORAGE_DIR = 'unittest/pdf_cache%s/' % token
-    print_settings.PDF_STORAGE_BASE_URL = 'unittest/pdf_cache%s/' % token
-    backup_settings.STORAGE_DIR = 'unittest/document_backup%s/' % token
-    backup_settings.STORAGE_BASE_URL = 'unittest/document_backup%s/' % token
-
-    settings_switcher.before()
-    #if use_testfs:
-    #    setup_fs.before()
-    setup_cache.before()
-
-def custom_after(use_testfs=True):
-    setup_cache = SetupCacheTesting()
-    setup_cache.after()
-
-def random_token(bits=128):
-    """
-    Generates a random token, using the url-safe base64 alphabet.
-    The "bits" argument specifies the bits of randomness to use.
-    """
-    alphabet = string.ascii_letters + string.digits + '-_'
-    # alphabet length is 64, so each letter provides lg(64) = 6 bits
-    num_letters = int(math.ceil(bits / 6.0))
-    return ''.join(random.choice(alphabet) for i in range(num_letters))
-
-class SetupCacheTesting():
-    def before(self):
-        from django.conf import settings
-        settings.CACHE_BACKEND = 'locmem://'
-        settings.DISABLE_QUERYSET_CACHE = True
-
-        from django.core.cache import cache
-        cache.clear()
-
-    def after(self):
-        pass
-
-class SetupSettingsSwitcher():
-    def __init__(self, settings_vals):
-        self.settings_vals = settings_vals
-        self.token = random_token()
-
-    def before(self):
-        from django.conf import settings
-
-        for key, value in self.settings_vals.items():
-            setattr(settings, key, value % {'token': self.token})
-
-    def after(self):
-        pass
-
