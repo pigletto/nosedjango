@@ -10,10 +10,16 @@ import nose.case
 from selenium.webdriver import Firefox as FirefoxWebDriver
 from selenium.webdriver import Chrome as ChromeDriver
 from selenium.webdriver import Remote as RemoteDriver
-from selenium.webdriver.common.exceptions import (
-    ErrorInResponseException,
-    WebDriverException,
-)
+try:
+    from selenium.webdriver.common.exceptions import (
+        ErrorInResponseException,
+        WebDriverException,
+    )
+except ImportError:
+    from selenium.common.exceptions import (
+        ErrorInResponseException,
+        WebDriverException,
+    )
 
 from nosedjango.plugins.base_plugin import Plugin
 
@@ -92,14 +98,13 @@ class SeleniumPlugin(Plugin):
             if current >= timeout:
                 raise urllib2.URLError('timeout')
 
-        # Set the logging level to INFO
+        monkey_patch_methods(self._driver)
         return self._driver
-
 
     def finalize(self, result):
         driver = self.get_driver()
         if driver:
-            self.get_driver().quit()
+            driver.quit()
 
         if self.xvfb_process:
             os.kill(self.xvfb_process.pid, 9)
@@ -126,6 +131,7 @@ class SeleniumPlugin(Plugin):
             self._current_windows_handle = driver.get_current_window_handle()
 
     def afterTest(self, test):
+        self._driver.roundtrip_counter = 0
         driver = getattr(test.test, 'driver', False)
         if not driver:
             return
@@ -136,16 +142,6 @@ class SeleniumPlugin(Plugin):
                     driver.switch_to_window(window)
                     driver.close()
                     driver.switch_to_window(self._current_windows_handle)
-        # deal with the onbeforeunload if it is there until selenium has a
-        # way to do so in the api
-        try:
-            driver.execute_script('window.onbeforeunload = function(){};')
-        except (ErrorInResponseException, AssertionError):
-            pass
-        except WebDriverException:
-            driver.quit()
-            self._driver = None
-
 
     def handleError(self, test, err):
         if isinstance(test, nose.case.Test) and \
@@ -176,3 +172,39 @@ class SeleniumPlugin(Plugin):
         if hasattr(driver, 'save_screenshot'):
             driver.save_screenshot(ss_file)
 
+def monkey_patch_methods(driver):
+    # Keep track of how many trips to execute are made
+    old_execute = driver.__class__.execute
+    def new_execute(self, *args, **kwargs):
+        roundtrip_counter = getattr(driver, 'roundtrip_counter', 0)
+        driver.roundtrip_counter = roundtrip_counter + 1
+        return old_execute(self, *args, **kwargs)
+    driver.__class__.execute = new_execute
+
+    # If there is an alert when trying to get a page, accept it
+    old_get = driver.__class__.get
+    def new_get(self, *args, **kwargs):
+        old_get(self, *args, **kwargs)
+        accept_alert(driver)
+    driver.__class__.get = new_get
+
+    # Need to move away from the page to ensure if there is an alert on the
+    # page it gets dealt with prior to closing the window
+    old_close = driver.__class__.close
+    def new_close(self, *args, **kwargs):
+        self.get('www.google.com') # Random page to ensure page is changed
+        old_close(self, *args, **kwargs)
+    driver.__class__.close = new_close
+
+    old_quit = driver.__class__.quit
+    def new_quit(self, *args, **kwargs):
+        self.close() # Need to handle onbeforeunload alerts
+        old_quit(self, *args, **kwargs)
+    driver.__class__.quit = new_quit
+
+def accept_alert(driver):
+    alert = driver.switch_to_alert()
+    try:
+        alert.accept()
+    except WebDriverException:
+        pass
