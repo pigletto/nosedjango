@@ -6,6 +6,28 @@ Django testing. Nose already has plugins for multiprocessing, coverage, tagging,
 profiling, skipping, xunit plugin and most everything else you could need. 
 Nosedjango means you don't have to re-invent those wheels.
 
+Perhaps the most compelling case for using nosedjango is the performance gains 
+seen when using the multiprocess module. Both runs on a core i7 laptop. 
+
+Normal Django testrunner using sqlite ::
+
+    $ ./manage.py test account
+    ...
+    Ran 65 tests in 507.930s
+
+    OK
+
+NoseDjango with 8 processes ::
+
+    $ nosetests --with-doctest --with-django --django-settings pstat.settings --with-django-testfs --with-django-sqlite --processes 8 pstat.account
+    ...
+    Ran 65 tests in 35.731s
+
+Nose is ~14x faster.
+    
+Easy Extensibility
+------------------
+
 In addition, Nosedjango provides its own plugin system to hook in to the low
 level django-specific testing operations. Included with Nosedjango are plugins
 to do things like:
