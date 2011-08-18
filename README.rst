@@ -7,7 +7,8 @@ profiling, skipping, xunit plugin and most everything else you could need.
 Nosedjango means you don't have to re-invent those wheels.
 
 Perhaps the most compelling case for using nosedjango is the performance gains 
-seen when using the multiprocess module. Both runs on a core i7 laptop. 
+seen when using the multiprocess module. (both runs on a core i7 laptop with a 
+fixture-intensive test suite) 
 
 Normal Django testrunner using sqlite ::
 
