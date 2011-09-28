@@ -193,6 +193,9 @@ class NoseDjango(Plugin):
         if getattr(settings, 'DISABLE_TRANSACTION_MANAGEMENT', False):
             # Do not use transactions if user has forbidden usage.
             return False
+        if getattr(settings, 'TEST_DISABLE_TRANSACTION_MANAGEMENT', False):
+            # Do not use transactions if user has forbidden usage for tests.
+            return False
         if hasattr(settings, 'DATABASE_SUPPORTS_TRANSACTIONS'):
             if not settings.DATABASE_SUPPORTS_TRANSACTIONS:
                 # The DB doesn't support transactions. Don't try it
