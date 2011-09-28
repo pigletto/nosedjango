@@ -39,7 +39,7 @@ class CherryPyLiveServerPlugin(Plugin):
         from django.conf import settings
 
         if not self.server_started and \
-           getattr(test, 'start_live_server', False):
+           getattr(test, 'start_live_server', True):
 
             self.start_server(
                 address=getattr(settings, "LIVE_SERVER_ADDRESS", DEFAULT_LIVE_SERVER_ADDRESS),
